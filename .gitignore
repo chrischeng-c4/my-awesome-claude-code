@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Claude Code local configuration
+.claude/settings.local.json
+.claude/cache/
+.claude/temp/
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation
+docs/_build/
+docs/.doctrees/
+
+# Package Management
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Claude-specific (old structure - to be removed)
+/install_extensions.py
+/cli.py
+/INSTALL.md
+/commands/
+/agents/
+/claude-code-extensions/
+
+# Keep the new structure
+!extensions/
+!extensions/commands/
+!extensions/agents/
+!src/
+!tests/
+!docs/
