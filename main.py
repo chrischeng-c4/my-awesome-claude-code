@@ -11,6 +11,7 @@ import typer
 from rich import print
 from rich.console import Console
 from rich.table import Table
+from rich.prompt import Prompt, Confirm
 
 __version__ = "1.0.0"
 
@@ -248,6 +249,162 @@ def command_uninstall(
     uninstall_extension("command", name, project)
 
 
+@app.command()
+def interactive():
+    """Interactive mode for managing extensions"""
+    console.print("[bold cyan]Claude Code Extensions Manager - Interactive Mode[/bold cyan]\n")
+
+    # Choose extension type
+    ext_type = Prompt.ask(
+        "What would you like to manage?",
+        choices=["agent", "command", "quit"],
+        default="agent"
+    )
+
+    if ext_type == "quit":
+        console.print("[yellow]Goodbye![/yellow]")
+        raise typer.Exit()
+
+    # Choose action
+    action = Prompt.ask(
+        f"\nWhat would you like to do with {ext_type}s?",
+        choices=["list", "install", "uninstall", "quit"],
+        default="list"
+    )
+
+    if action == "quit":
+        console.print("[yellow]Goodbye![/yellow]")
+        raise typer.Exit()
+
+    # Execute action
+    if action == "list":
+        # Ask if listing available or installed
+        list_type = Prompt.ask(
+            "\nList which extensions?",
+            choices=["available", "installed"],
+            default="available"
+        )
+
+        if list_type == "available":
+            extensions = list_available(ext_type)
+            if not extensions:
+                console.print(f"[yellow]No {ext_type}s available[/yellow]")
+            else:
+                console.print(f"\n[bold]Available {ext_type.capitalize()}s:[/bold]")
+                for i, name in enumerate(sorted(extensions), 1):
+                    console.print(f"  {i}. [green]{name}[/green]")
+        else:
+            # Ask for level
+            if Confirm.ask("\nList user-level extensions?", default=False):
+                project = None
+            else:
+                project = Path(Prompt.ask("Project path", default="."))
+
+            installed = list_installed(ext_type, project)
+            if not installed:
+                level = "user" if project is None else "project"
+                console.print(f"[yellow]No {ext_type}s installed at {level} level[/yellow]")
+            else:
+                console.print(f"\n[bold]Installed {ext_type.capitalize()}s:[/bold]")
+                for name, location in installed:
+                    console.print(f"  • [green]{name}[/green] ({location})")
+
+    elif action == "install":
+        # Show available extensions
+        extensions = list_available(ext_type)
+        if not extensions:
+            console.print(f"[yellow]No {ext_type}s available to install[/yellow]")
+            raise typer.Exit()
+
+        console.print(f"\n[bold]Available {ext_type.capitalize()}s:[/bold]")
+        for i, name in enumerate(sorted(extensions), 1):
+            console.print(f"  {i}. [green]{name}[/green]")
+
+        # Select extension
+        while True:
+            choice = Prompt.ask("\nSelect number (or 'q' to quit)")
+            if choice.lower() == 'q':
+                console.print("[yellow]Cancelled[/yellow]")
+                raise typer.Exit()
+
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(extensions):
+                    selected = sorted(extensions)[idx]
+                    break
+                else:
+                    console.print("[red]Invalid selection[/red]")
+            except ValueError:
+                console.print("[red]Please enter a number[/red]")
+
+        # Choose installation level
+        if Confirm.ask(f"\nInstall '{selected}' to user level?", default=False):
+            project = None
+            console.print("[dim]Installing to user level (~/.claude)[/dim]")
+        else:
+            project = Path(Prompt.ask("Project path", default="."))
+            console.print(f"[dim]Installing to project: {project}[/dim]")
+
+        # Confirm and install
+        if Confirm.ask(f"\nProceed with installation?", default=True):
+            try:
+                install_extension(ext_type, selected, project)
+                console.print(f"[green]✅ Successfully installed '{selected}'![/green]")
+            except typer.Exit:
+                pass  # Error already displayed
+        else:
+            console.print("[yellow]Installation cancelled[/yellow]")
+
+    elif action == "uninstall":
+        # Choose level first
+        if Confirm.ask("\nUninstall from user level?", default=False):
+            project = None
+        else:
+            project = Path(Prompt.ask("Project path", default="."))
+
+        # Show installed extensions
+        installed = list_installed(ext_type, project)
+        if not installed:
+            level = "user" if project is None else "project"
+            console.print(f"[yellow]No {ext_type}s installed at {level} level[/yellow]")
+            raise typer.Exit()
+
+        console.print(f"\n[bold]Installed {ext_type.capitalize()}s:[/bold]")
+        for i, (name, location) in enumerate(installed, 1):
+            console.print(f"  {i}. [green]{name}[/green]")
+
+        # Select extension to uninstall
+        while True:
+            choice = Prompt.ask("\nSelect number to uninstall (or 'q' to quit)")
+            if choice.lower() == 'q':
+                console.print("[yellow]Cancelled[/yellow]")
+                raise typer.Exit()
+
+            try:
+                idx = int(choice) - 1
+                if 0 <= idx < len(installed):
+                    selected = installed[idx][0]
+                    break
+                else:
+                    console.print("[red]Invalid selection[/red]")
+            except ValueError:
+                console.print("[red]Please enter a number[/red]")
+
+        # Confirm and uninstall
+        if Confirm.ask(f"\nUninstall '{selected}'?", default=False):
+            try:
+                uninstall_extension(ext_type, selected, project)
+                console.print(f"[green]✅ Successfully uninstalled '{selected}'![/green]")
+            except typer.Exit:
+                pass  # Error already displayed
+        else:
+            console.print("[yellow]Uninstall cancelled[/yellow]")
+
+    # Ask if user wants to continue
+    if Confirm.ask("\n[cyan]Continue with another operation?[/cyan]", default=True):
+        interactive()  # Recursive call to continue
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -261,15 +418,17 @@ def main(
     if ctx.invoked_subcommand is None:
         # Show help if no command given
         print("[cyan]Claude Code Extensions Manager[/cyan]")
-        print("\nUsage: claude-ext [agent|command] [COMMAND] [OPTIONS]")
-        print("\nManage:")
-        print("  agent      Manage Claude Code agents")
-        print("  command    Manage Claude Code commands")
+        print("\nUsage: claude-ext [agent|command|interactive] [OPTIONS]")
+        print("\nCommands:")
+        print("  agent        Manage Claude Code agents")
+        print("  command      Manage Claude Code commands")
+        print("  interactive  Interactive mode (guided)")
         print("\nExamples:")
+        print("  claude-ext interactive                        # Start interactive mode")
         print("  claude-ext agent list")
         print("  claude-ext agent install security-scanner")
         print("  claude-ext command install smart-commit --project ~/my-project")
-        print("\nRun 'claude-ext [agent|command] --help' for more information")
+        print("\nRun 'claude-ext [COMMAND] --help' for more information")
 
 
 if __name__ == "__main__":

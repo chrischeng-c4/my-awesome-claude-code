@@ -14,7 +14,24 @@ pip install -e .
 
 ## Usage
 
-### List available extensions
+### Interactive Mode (Recommended for beginners)
+```bash
+# Start guided interactive mode
+uv run claude-ext interactive
+
+# Or just:
+claude-ext interactive
+```
+
+The interactive mode will guide you through:
+- Choosing what to manage (agents or commands)
+- Selecting an action (list, install, uninstall)
+- Picking extensions from a numbered list
+- Choosing installation level (user or project)
+
+### CLI Mode (For power users)
+
+#### List available extensions
 ```bash
 # List available agents
 uv run claude-ext agent list
