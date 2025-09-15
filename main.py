@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 
 import typer
-import click
+import questionary
 from rich import print
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
+from typing import Optional
 from rich.text import Text
 
 __version__ = "1.0.0"
@@ -334,22 +335,22 @@ def interactive():
     """Interactive mode for managing extensions"""
     console.print("[bold cyan]Claude Code Extensions Manager - Interactive Mode[/bold cyan]\n")
 
-    # Choose extension type
-    ext_type = Prompt.ask(
-        "What would you like to manage?",
-        choices=["agent", "command", "quit"],
-        default="agent"
+    # Choose extension type using select
+    ext_type = single_select(
+        ["agent", "command", "quit"],
+        title="What would you like to manage?",
+        default_index=0
     )
 
     if ext_type == "quit":
         console.print("[yellow]Goodbye![/yellow]")
         raise typer.Exit()
 
-    # Choose action
-    action = Prompt.ask(
-        f"\nWhat would you like to do with {ext_type}s?",
-        choices=["list", "install", "uninstall", "quit"],
-        default="list"
+    # Choose action using select
+    action = single_select(
+        ["list", "install", "uninstall", "quit"],
+        title=f"What would you like to do with {ext_type}s?",
+        default_index=0
     )
 
     if action == "quit":
@@ -358,11 +359,11 @@ def interactive():
 
     # Execute action
     if action == "list":
-        # Ask if listing available or installed
-        list_type = Prompt.ask(
-            "\nList which extensions?",
-            choices=["available", "installed"],
-            default="available"
+        # Ask if listing available or installed using select
+        list_type = single_select(
+            ["available", "installed"],
+            title="List which extensions?",
+            default_index=0
         )
 
         if list_type == "available":
@@ -374,11 +375,27 @@ def interactive():
                 for i, name in enumerate(sorted(extensions), 1):
                     console.print(f"  {i}. [green]{name}[/green]")
         else:
-            # Ask for level
-            if Confirm.ask("\nList user-level extensions?", default=False):
+            # Ask for level using select
+            level = single_select(
+                ["user-level (~/.claude)", "project-level"],
+                title="Which level?",
+                default_index=0
+            )
+            if level == "user-level (~/.claude)":
                 project = None
             else:
-                project = Path(Prompt.ask("Project path", default="."))
+                # For project level, ask for path using select from common options
+                project_choice = single_select(
+                    ["current directory (.)", "parent directory (..)", "enter custom path"],
+                    title="Select project location",
+                    default_index=0
+                )
+                if project_choice == "current directory (.)":
+                    project = Path(".")
+                elif project_choice == "parent directory (..)":
+                    project = Path("..")
+                else:
+                    project = Path(Prompt.ask("Enter project path", default="."))
 
             installed = list_installed(ext_type, project)
             if not installed:
@@ -396,12 +413,13 @@ def interactive():
             console.print(f"[yellow]No {ext_type}s available to install[/yellow]")
             raise typer.Exit()
 
-        # Ask for selection mode
-        mode = Prompt.ask(
-            "\nSelection mode?",
-            choices=["single", "multiple"],
-            default="multiple"
+        # Ask for selection mode using select
+        mode = single_select(
+            ["multiple (select many)", "single (select one)"],
+            title="Selection mode?",
+            default_index=0
         )
+        mode = "multiple" if "multiple" in mode else "single"
 
         if mode == "multiple":
             # Multi-select mode
@@ -420,15 +438,37 @@ def interactive():
             for item in selected_items:
                 console.print(f"  • {item}")
 
-            if Confirm.ask(f"\nInstall to user level?", default=False):
+            # Choose installation level using select
+            level = single_select(
+                ["user-level (~/.claude)", "project-level"],
+                title="Where to install?",
+                default_index=0
+            )
+            if level == "user-level (~/.claude)":
                 project = None
                 console.print("[dim]Installing to user level (~/.claude)[/dim]")
             else:
-                project = Path(Prompt.ask("Project path", default="."))
+                # For project level, ask for path using select from common options
+                project_choice = single_select(
+                    ["current directory (.)", "parent directory (..)", "enter custom path"],
+                    title="Select project location",
+                    default_index=0
+                )
+                if project_choice == "current directory (.)":
+                    project = Path(".")
+                elif project_choice == "parent directory (..)":
+                    project = Path("..")
+                else:
+                    project = Path(Prompt.ask("Enter project path", default="."))
                 console.print(f"[dim]Installing to project: {project}[/dim]")
 
-            # Confirm and install
-            if Confirm.ask(f"\nProceed with installation of {len(selected_items)} {ext_type}(s)?", default=True):
+            # Confirm using select
+            confirm = single_select(
+                ["Yes, proceed", "No, cancel"],
+                title=f"Proceed with installation of {len(selected_items)} {ext_type}(s)?",
+                default_index=0
+            )
+            if confirm == "Yes, proceed":
                 successful, failed = install_multiple_extensions(ext_type, selected_items, project)
 
                 # Summary
@@ -441,38 +481,47 @@ def interactive():
                 console.print("[yellow]Installation cancelled[/yellow]")
 
         else:
-            # Single selection mode (original behavior)
-            console.print(f"\n[bold]Available {ext_type.capitalize()}s:[/bold]")
-            for i, name in enumerate(sorted(extensions), 1):
-                console.print(f"  {i}. [green]{name}[/green]")
+            # Single selection mode using select
+            selected = single_select(
+                sorted(extensions),
+                title=f"Select {ext_type} to install",
+                default_index=0
+            )
+            if not selected:
+                console.print("[yellow]Cancelled[/yellow]")
+                raise typer.Exit()
 
-            # Select extension
-            while True:
-                choice = Prompt.ask("\nSelect number (or 'q' to quit)")
-                if choice.lower() == 'q':
-                    console.print("[yellow]Cancelled[/yellow]")
-                    raise typer.Exit()
-
-                try:
-                    idx = int(choice) - 1
-                    if 0 <= idx < len(extensions):
-                        selected = sorted(extensions)[idx]
-                        break
-                    else:
-                        console.print("[red]Invalid selection[/red]")
-                except ValueError:
-                    console.print("[red]Please enter a number[/red]")
-
-            # Choose installation level
-            if Confirm.ask(f"\nInstall '{selected}' to user level?", default=False):
+            # Choose installation level using select
+            level = single_select(
+                ["user-level (~/.claude)", "project-level"],
+                title=f"Where to install '{selected}'?",
+                default_index=0
+            )
+            if level == "user-level (~/.claude)":
                 project = None
                 console.print("[dim]Installing to user level (~/.claude)[/dim]")
             else:
-                project = Path(Prompt.ask("Project path", default="."))
+                # For project level, ask for path using select from common options
+                project_choice = single_select(
+                    ["current directory (.)", "parent directory (..)", "enter custom path"],
+                    title="Select project location",
+                    default_index=0
+                )
+                if project_choice == "current directory (.)":
+                    project = Path(".")
+                elif project_choice == "parent directory (..)":
+                    project = Path("..")
+                else:
+                    project = Path(Prompt.ask("Enter project path", default="."))
                 console.print(f"[dim]Installing to project: {project}[/dim]")
 
-            # Confirm and install
-            if Confirm.ask(f"\nProceed with installation?", default=True):
+            # Confirm using select
+            confirm = single_select(
+                ["Yes, proceed", "No, cancel"],
+                title="Proceed with installation?",
+                default_index=0
+            )
+            if confirm == "Yes, proceed":
                 try:
                     install_extension(ext_type, selected, project)
                     console.print(f"[green]✅ Successfully installed '{selected}'![/green]")
@@ -482,11 +531,27 @@ def interactive():
                 console.print("[yellow]Installation cancelled[/yellow]")
 
     elif action == "uninstall":
-        # Choose level first
-        if Confirm.ask("\nUninstall from user level?", default=False):
+        # Choose level first using select
+        level = single_select(
+            ["user-level (~/.claude)", "project-level"],
+            title="Uninstall from which level?",
+            default_index=0
+        )
+        if level == "user-level (~/.claude)":
             project = None
         else:
-            project = Path(Prompt.ask("Project path", default="."))
+            # For project level, ask for path using select from common options
+            project_choice = single_select(
+                ["current directory (.)", "parent directory (..)", "enter custom path"],
+                title="Select project location",
+                default_index=0
+            )
+            if project_choice == "current directory (.)":
+                project = Path(".")
+            elif project_choice == "parent directory (..)":
+                project = Path("..")
+            else:
+                project = Path(Prompt.ask("Enter project path", default="."))
 
         # Show installed extensions
         installed = list_installed(ext_type, project)
@@ -499,25 +564,24 @@ def interactive():
         for i, (name, location) in enumerate(installed, 1):
             console.print(f"  {i}. [green]{name}[/green]")
 
-        # Select extension to uninstall
-        while True:
-            choice = Prompt.ask("\nSelect number to uninstall (or 'q' to quit)")
-            if choice.lower() == 'q':
-                console.print("[yellow]Cancelled[/yellow]")
-                raise typer.Exit()
+        # Select extension to uninstall using select
+        installed_names = [name for name, _ in installed]
+        selected = single_select(
+            installed_names,
+            title="Select extension to uninstall",
+            default_index=0
+        )
+        if not selected:
+            console.print("[yellow]Cancelled[/yellow]")
+            raise typer.Exit()
 
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(installed):
-                    selected = installed[idx][0]
-                    break
-                else:
-                    console.print("[red]Invalid selection[/red]")
-            except ValueError:
-                console.print("[red]Please enter a number[/red]")
-
-        # Confirm and uninstall
-        if Confirm.ask(f"\nUninstall '{selected}'?", default=False):
+        # Confirm using select
+        confirm = single_select(
+            ["Yes, uninstall", "No, cancel"],
+            title=f"Uninstall '{selected}'?",
+            default_index=1  # Default to "No" for safety
+        )
+        if confirm == "Yes, uninstall":
             try:
                 uninstall_extension(ext_type, selected, project)
                 console.print(f"[green]✅ Successfully uninstalled '{selected}'![/green]")
@@ -526,105 +590,94 @@ def interactive():
         else:
             console.print("[yellow]Uninstall cancelled[/yellow]")
 
-    # Ask if user wants to continue
-    if Confirm.ask("\n[cyan]Continue with another operation?[/cyan]", default=True):
+    # Ask if user wants to continue using select
+    continue_choice = single_select(
+        ["Yes, continue", "No, exit"],
+        title="Continue with another operation?",
+        default_index=0
+    )
+    if continue_choice == "Yes, continue":
         interactive()  # Recursive call to continue
+
+
+def single_select(
+    items: List[str],
+    title: str = "Select an option",
+    default_index: int = 0
+) -> str:
+    """Interactive single-select using questionary for better arrow key support."""
+    try:
+        # Use questionary for better terminal compatibility
+        result = questionary.select(
+            title,
+            choices=items,
+            default=items[default_index] if items else None
+        ).ask()
+        return result if result else ""
+    except (KeyboardInterrupt, EOFError):
+        return ""
+    except:
+        # Fallback to numbered selection if questionary fails
+        return _single_select_numbered(items, title, default_index)
+
+
+# Removed _single_select_interactive as we're using questionary now
+
+
+def _single_select_numbered(
+    items: List[str],
+    title: str,
+    default_index: int = 0
+) -> str:
+    """Fallback single-select using numbered choices."""
+    console.print(f"[bold cyan]{title}[/bold cyan]\n")
+
+    # Display items with numbers
+    for i, item in enumerate(items, 1):
+        if i - 1 == default_index:
+            console.print(f"  {i}. [green]{item} (default)[/green]")
+        else:
+            console.print(f"  {i}. {item}")
+
+    console.print("\n[dim]Enter number to select, or press ENTER for default[/dim]")
+
+    while True:
+        choice = Prompt.ask("Selection", default=str(default_index + 1)).strip()
+
+        if choice.lower() == 'q':  # Quit
+            return ""
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(items):
+                return items[idx]
+            else:
+                console.print("[red]Invalid selection[/red]")
+        except ValueError:
+            console.print("[red]Please enter a number[/red]")
 
 
 def multi_select(
     items: List[str],
     title: str = "Select items",
-    instructions: str = "Use numbers to select, 'a' for all, 'n' for none, 'c' to confirm"
+    instructions: str = "Use arrow keys to navigate, space to select"
 ) -> List[str]:
-    """Interactive multi-select prompt with fallback for non-TTY environments."""
-    selected = set()
-
-    # Try to use the interactive mode, fall back to simpler selection if not available
+    """Interactive multi-select using questionary for better arrow key support."""
     try:
-        # Test if we can use getchar
-        if not (hasattr(sys.stdin, 'isatty') and sys.stdin.isatty()):
-            raise OSError("Not a TTY")
-
-        # Try the interactive version first
-        return _multi_select_interactive(items, title)
-    except (OSError, ImportError):
-        # Fallback to numbered selection
+        # Use questionary for better terminal compatibility
+        result = questionary.checkbox(
+            title,
+            choices=items
+        ).ask()
+        return result if result else []
+    except (KeyboardInterrupt, EOFError):
+        return []
+    except:
+        # Fallback to numbered selection if questionary fails
         return _multi_select_numbered(items, title)
 
 
-def _multi_select_interactive(
-    items: List[str],
-    title: str
-) -> List[str]:
-    """Interactive multi-select with keyboard navigation."""
-    selected = set()
-    current_idx = 0
-    instructions = "↑↓/jk Navigate | SPACE Select | a All | n None | ENTER Confirm | q Quit"
-
-    # Hide cursor and set up terminal
-    console.show_cursor(False)
-
-    try:
-        while True:
-            # Clear screen for refresh
-            console.clear()
-
-            # Display title and instructions
-            console.print(f"[bold cyan]{title}[/bold cyan]")
-            console.print(f"[dim]{instructions}[/dim]\n")
-
-            # Display items with selection status
-            for i, item in enumerate(items):
-                prefix = "[✓]" if item in selected else "[ ]"
-                if i == current_idx:
-                    # Highlight current item
-                    console.print(f"  [bold reverse]{prefix} {item}[/bold reverse]")
-                else:
-                    if item in selected:
-                        console.print(f"  [green]{prefix}[/green] {item}")
-                    else:
-                        console.print(f"  {prefix} {item}")
-
-            # Display selected count
-            if selected:
-                console.print(f"\n[green]Selected: {len(selected)} item(s)[/green]")
-
-            # Get user input (single keystroke)
-            key = click.getchar()
-
-            # Handle arrow keys (they come as escape sequences)
-            if key == '\x1b':  # ESC sequence
-                next_char = click.getchar()
-                if next_char == '[':
-                    arrow = click.getchar()
-                    if arrow == 'A':  # Up arrow
-                        current_idx = max(0, current_idx - 1)
-                    elif arrow == 'B':  # Down arrow
-                        current_idx = min(len(items) - 1, current_idx + 1)
-            elif key == 'k':  # k for up
-                current_idx = max(0, current_idx - 1)
-            elif key == 'j':  # j for down
-                current_idx = min(len(items) - 1, current_idx + 1)
-            elif key == ' ':  # Space to toggle selection
-                if items[current_idx] in selected:
-                    selected.remove(items[current_idx])
-                else:
-                    selected.add(items[current_idx])
-            elif key == '\r' or key == '\n':  # Enter to confirm
-                break
-            elif key.lower() == 'q':  # Quit
-                selected = []
-                break
-            elif key.lower() == 'a':  # Select all
-                selected = set(items)
-            elif key.lower() == 'n':  # Select none
-                selected.clear()
-    finally:
-        # Show cursor again
-        console.show_cursor(True)
-        console.clear()
-
-    return list(selected)
+# Removed _multi_select_interactive as we're using questionary now
 
 
 def _multi_select_numbered(
@@ -737,14 +790,15 @@ def install_multiple_extensions(
 def main(
     ctx: typer.Context,
     version: bool = typer.Option(False, "--version", "-v", help="Show version"),
+    help: bool = typer.Option(False, "--help", "-h", help="Show help"),
 ):
     """Claude Code Extensions Manager"""
     if version:
         print(f"[cyan]claude-ext[/cyan] version [green]{__version__}[/green]")
         raise typer.Exit()
 
-    if ctx.invoked_subcommand is None:
-        # Show help if no command given
+    if help and ctx.invoked_subcommand is None:
+        # Show help if explicitly requested
         print("[cyan]Claude Code Extensions Manager[/cyan]")
         print("\nUsage: claude-ext [agent|command|interactive] [OPTIONS]")
         print("\nCommands:")
@@ -752,6 +806,7 @@ def main(
         print("  command      Manage Claude Code commands")
         print("  interactive  Interactive mode (guided)")
         print("\nExamples:")
+        print("  claude-ext                                     # Start interactive mode (default)")
         print("  claude-ext interactive                        # Start interactive mode")
         print("  claude-ext agent list")
         print("  claude-ext agent install security-scanner")
@@ -759,6 +814,11 @@ def main(
         print("  claude-ext command install -i                   # Interactive multi-select")
         print("  claude-ext command install smart-commit --project ~/my-project")
         print("\nRun 'claude-ext [COMMAND] --help' for more information")
+        raise typer.Exit()
+
+    if ctx.invoked_subcommand is None:
+        # Default to interactive mode if no command given
+        interactive()
 
 
 if __name__ == "__main__":
