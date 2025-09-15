@@ -3,15 +3,19 @@
 Claude Code Extensions Manager - Simple CLI for managing Claude Code extensions
 """
 
+import os
 import shutil
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Tuple
 
 import typer
+import click
 from rich import print
 from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
+from rich.text import Text
 
 __version__ = "1.0.0"
 
@@ -174,12 +178,50 @@ def agent_list(
 
 @agent_app.command("install")
 def agent_install(
-    name: str = typer.Argument(..., help="Agent name to install"),
+    names: List[str] = typer.Argument(None, help="Agent name(s) to install (space-separated for multiple)"),
     project: Optional[Path] = typer.Option(None, "--project", "-p", help="Project path (if not specified, installs to user level)"),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite if exists"),
+    interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive multi-select mode"),
 ):
-    """Install a Claude Code agent."""
-    install_extension("agent", name, project, force)
+    """Install Claude Code agents."""
+    if interactive or not names:
+        # Interactive mode
+        extensions = list_available("agent")
+        if not extensions:
+            console.print("[yellow]No agents available to install[/yellow]")
+            raise typer.Exit()
+
+        selected = multi_select(
+            sorted(extensions),
+            title="Select agents to install",
+            instructions="↑↓ Navigate | SPACE Select/Deselect | A Select All | ENTER Confirm | Q Quit"
+        )
+
+        if not selected:
+            console.print("[yellow]No agents selected[/yellow]")
+            raise typer.Exit()
+
+        successful, failed = install_multiple_extensions("agent", selected, project, force)
+
+        # Summary
+        if successful:
+            console.print(f"\n[green]✅ Successfully installed {len(successful)} agent(s)[/green]")
+        if failed:
+            console.print(f"[red]❌ Failed to install {len(failed)} agent(s)[/red]")
+
+    elif len(names) == 1:
+        # Single installation
+        install_extension("agent", names[0], project, force)
+
+    else:
+        # Multiple installation
+        successful, failed = install_multiple_extensions("agent", names, project, force)
+
+        # Summary
+        if successful:
+            console.print(f"\n[green]✅ Successfully installed {len(successful)} agent(s)[/green]")
+        if failed:
+            console.print(f"[red]❌ Failed to install {len(failed)} agent(s)[/red]")
 
 
 @agent_app.command("uninstall")
@@ -232,12 +274,50 @@ def command_list(
 
 @command_app.command("install")
 def command_install(
-    name: str = typer.Argument(..., help="Command name to install"),
+    names: List[str] = typer.Argument(None, help="Command name(s) to install (space-separated for multiple)"),
     project: Optional[Path] = typer.Option(None, "--project", "-p", help="Project path (if not specified, installs to user level)"),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite if exists"),
+    interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive multi-select mode"),
 ):
-    """Install a Claude Code command."""
-    install_extension("command", name, project, force)
+    """Install Claude Code commands."""
+    if interactive or not names:
+        # Interactive mode
+        extensions = list_available("command")
+        if not extensions:
+            console.print("[yellow]No commands available to install[/yellow]")
+            raise typer.Exit()
+
+        selected = multi_select(
+            sorted(extensions),
+            title="Select commands to install",
+            instructions="↑↓ Navigate | SPACE Select/Deselect | A Select All | ENTER Confirm | Q Quit"
+        )
+
+        if not selected:
+            console.print("[yellow]No commands selected[/yellow]")
+            raise typer.Exit()
+
+        successful, failed = install_multiple_extensions("command", selected, project, force)
+
+        # Summary
+        if successful:
+            console.print(f"\n[green]✅ Successfully installed {len(successful)} command(s)[/green]")
+        if failed:
+            console.print(f"[red]❌ Failed to install {len(failed)} command(s)[/red]")
+
+    elif len(names) == 1:
+        # Single installation
+        install_extension("command", names[0], project, force)
+
+    else:
+        # Multiple installation
+        successful, failed = install_multiple_extensions("command", names, project, force)
+
+        # Summary
+        if successful:
+            console.print(f"\n[green]✅ Successfully installed {len(successful)} command(s)[/green]")
+        if failed:
+            console.print(f"[red]❌ Failed to install {len(failed)} command(s)[/red]")
 
 
 @command_app.command("uninstall")
@@ -316,44 +396,90 @@ def interactive():
             console.print(f"[yellow]No {ext_type}s available to install[/yellow]")
             raise typer.Exit()
 
-        console.print(f"\n[bold]Available {ext_type.capitalize()}s:[/bold]")
-        for i, name in enumerate(sorted(extensions), 1):
-            console.print(f"  {i}. [green]{name}[/green]")
+        # Ask for selection mode
+        mode = Prompt.ask(
+            "\nSelection mode?",
+            choices=["single", "multiple"],
+            default="multiple"
+        )
 
-        # Select extension
-        while True:
-            choice = Prompt.ask("\nSelect number (or 'q' to quit)")
-            if choice.lower() == 'q':
-                console.print("[yellow]Cancelled[/yellow]")
+        if mode == "multiple":
+            # Multi-select mode
+            selected_items = multi_select(
+                sorted(extensions),
+                title=f"Select {ext_type}s to install (SPACE to select, ENTER to confirm)",
+                instructions="↑↓ Navigate | SPACE Select/Deselect | A Select All | ENTER Confirm | Q Quit"
+            )
+
+            if not selected_items:
+                console.print("[yellow]No items selected[/yellow]")
                 raise typer.Exit()
 
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(extensions):
-                    selected = sorted(extensions)[idx]
-                    break
-                else:
-                    console.print("[red]Invalid selection[/red]")
-            except ValueError:
-                console.print("[red]Please enter a number[/red]")
+            # Choose installation level
+            console.print(f"\n[cyan]Selected {len(selected_items)} {ext_type}(s) for installation[/cyan]")
+            for item in selected_items:
+                console.print(f"  • {item}")
 
-        # Choose installation level
-        if Confirm.ask(f"\nInstall '{selected}' to user level?", default=False):
-            project = None
-            console.print("[dim]Installing to user level (~/.claude)[/dim]")
-        else:
-            project = Path(Prompt.ask("Project path", default="."))
-            console.print(f"[dim]Installing to project: {project}[/dim]")
+            if Confirm.ask(f"\nInstall to user level?", default=False):
+                project = None
+                console.print("[dim]Installing to user level (~/.claude)[/dim]")
+            else:
+                project = Path(Prompt.ask("Project path", default="."))
+                console.print(f"[dim]Installing to project: {project}[/dim]")
 
-        # Confirm and install
-        if Confirm.ask(f"\nProceed with installation?", default=True):
-            try:
-                install_extension(ext_type, selected, project)
-                console.print(f"[green]✅ Successfully installed '{selected}'![/green]")
-            except typer.Exit:
-                pass  # Error already displayed
+            # Confirm and install
+            if Confirm.ask(f"\nProceed with installation of {len(selected_items)} {ext_type}(s)?", default=True):
+                successful, failed = install_multiple_extensions(ext_type, selected_items, project)
+
+                # Summary
+                console.print(f"\n[bold]Installation Summary:[/bold]")
+                if successful:
+                    console.print(f"[green]✅ Successfully installed: {len(successful)} {ext_type}(s)[/green]")
+                if failed:
+                    console.print(f"[red]❌ Failed: {len(failed)} {ext_type}(s)[/red]")
+            else:
+                console.print("[yellow]Installation cancelled[/yellow]")
+
         else:
-            console.print("[yellow]Installation cancelled[/yellow]")
+            # Single selection mode (original behavior)
+            console.print(f"\n[bold]Available {ext_type.capitalize()}s:[/bold]")
+            for i, name in enumerate(sorted(extensions), 1):
+                console.print(f"  {i}. [green]{name}[/green]")
+
+            # Select extension
+            while True:
+                choice = Prompt.ask("\nSelect number (or 'q' to quit)")
+                if choice.lower() == 'q':
+                    console.print("[yellow]Cancelled[/yellow]")
+                    raise typer.Exit()
+
+                try:
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(extensions):
+                        selected = sorted(extensions)[idx]
+                        break
+                    else:
+                        console.print("[red]Invalid selection[/red]")
+                except ValueError:
+                    console.print("[red]Please enter a number[/red]")
+
+            # Choose installation level
+            if Confirm.ask(f"\nInstall '{selected}' to user level?", default=False):
+                project = None
+                console.print("[dim]Installing to user level (~/.claude)[/dim]")
+            else:
+                project = Path(Prompt.ask("Project path", default="."))
+                console.print(f"[dim]Installing to project: {project}[/dim]")
+
+            # Confirm and install
+            if Confirm.ask(f"\nProceed with installation?", default=True):
+                try:
+                    install_extension(ext_type, selected, project)
+                    console.print(f"[green]✅ Successfully installed '{selected}'![/green]")
+                except typer.Exit:
+                    pass  # Error already displayed
+            else:
+                console.print("[yellow]Installation cancelled[/yellow]")
 
     elif action == "uninstall":
         # Choose level first
@@ -405,6 +531,208 @@ def interactive():
         interactive()  # Recursive call to continue
 
 
+def multi_select(
+    items: List[str],
+    title: str = "Select items",
+    instructions: str = "Use numbers to select, 'a' for all, 'n' for none, 'c' to confirm"
+) -> List[str]:
+    """Interactive multi-select prompt with fallback for non-TTY environments."""
+    selected = set()
+
+    # Try to use the interactive mode, fall back to simpler selection if not available
+    try:
+        # Test if we can use getchar
+        if not (hasattr(sys.stdin, 'isatty') and sys.stdin.isatty()):
+            raise OSError("Not a TTY")
+
+        # Try the interactive version first
+        return _multi_select_interactive(items, title)
+    except (OSError, ImportError):
+        # Fallback to numbered selection
+        return _multi_select_numbered(items, title)
+
+
+def _multi_select_interactive(
+    items: List[str],
+    title: str
+) -> List[str]:
+    """Interactive multi-select with keyboard navigation."""
+    selected = set()
+    current_idx = 0
+    instructions = "↑↓/jk Navigate | SPACE Select | a All | n None | ENTER Confirm | q Quit"
+
+    # Hide cursor and set up terminal
+    console.show_cursor(False)
+
+    try:
+        while True:
+            # Clear screen for refresh
+            console.clear()
+
+            # Display title and instructions
+            console.print(f"[bold cyan]{title}[/bold cyan]")
+            console.print(f"[dim]{instructions}[/dim]\n")
+
+            # Display items with selection status
+            for i, item in enumerate(items):
+                prefix = "[✓]" if item in selected else "[ ]"
+                if i == current_idx:
+                    # Highlight current item
+                    console.print(f"  [bold reverse]{prefix} {item}[/bold reverse]")
+                else:
+                    if item in selected:
+                        console.print(f"  [green]{prefix}[/green] {item}")
+                    else:
+                        console.print(f"  {prefix} {item}")
+
+            # Display selected count
+            if selected:
+                console.print(f"\n[green]Selected: {len(selected)} item(s)[/green]")
+
+            # Get user input (single keystroke)
+            key = click.getchar()
+
+            # Handle arrow keys (they come as escape sequences)
+            if key == '\x1b':  # ESC sequence
+                next_char = click.getchar()
+                if next_char == '[':
+                    arrow = click.getchar()
+                    if arrow == 'A':  # Up arrow
+                        current_idx = max(0, current_idx - 1)
+                    elif arrow == 'B':  # Down arrow
+                        current_idx = min(len(items) - 1, current_idx + 1)
+            elif key == 'k':  # k for up
+                current_idx = max(0, current_idx - 1)
+            elif key == 'j':  # j for down
+                current_idx = min(len(items) - 1, current_idx + 1)
+            elif key == ' ':  # Space to toggle selection
+                if items[current_idx] in selected:
+                    selected.remove(items[current_idx])
+                else:
+                    selected.add(items[current_idx])
+            elif key == '\r' or key == '\n':  # Enter to confirm
+                break
+            elif key.lower() == 'q':  # Quit
+                selected = []
+                break
+            elif key.lower() == 'a':  # Select all
+                selected = set(items)
+            elif key.lower() == 'n':  # Select none
+                selected.clear()
+    finally:
+        # Show cursor again
+        console.show_cursor(True)
+        console.clear()
+
+    return list(selected)
+
+
+def _multi_select_numbered(
+    items: List[str],
+    title: str
+) -> List[str]:
+    """Fallback multi-select using numbered choices."""
+    selected = set()
+
+    while True:
+        console.clear()
+        console.print(f"[bold cyan]{title}[/bold cyan]\n")
+
+        # Display items with numbers
+        for i, item in enumerate(items, 1):
+            prefix = "[✓]" if item in selected else "[ ]"
+            if item in selected:
+                console.print(f"  {i:2}. [green]{prefix}[/green] {item}")
+            else:
+                console.print(f"  {i:2}. {prefix} {item}")
+
+        # Display selected count
+        if selected:
+            console.print(f"\n[green]Selected: {len(selected)} item(s)[/green]")
+
+        console.print("\n[dim]Enter numbers (space-separated) to toggle, 'a' for all, 'n' for none, 'c' to confirm, 'q' to quit[/dim]")
+
+        choice = Prompt.ask("Selection").strip().lower()
+
+        if choice == 'c':  # Confirm
+            break
+        elif choice == 'q':  # Quit
+            selected = set()
+            break
+        elif choice == 'a':  # Select all
+            selected = set(items)
+        elif choice == 'n':  # Select none
+            selected.clear()
+        else:
+            # Parse numbers
+            try:
+                numbers = [int(x) for x in choice.split()]
+                for num in numbers:
+                    if 1 <= num <= len(items):
+                        item = items[num - 1]
+                        if item in selected:
+                            selected.remove(item)
+                        else:
+                            selected.add(item)
+            except (ValueError, IndexError):
+                pass  # Ignore invalid input
+
+    return list(selected)
+
+
+def install_multiple_extensions(
+    ext_type: str,
+    names: List[str],
+    project_path: Optional[Path] = None,
+    force: bool = False
+) -> Tuple[List[str], List[str]]:
+    """Install multiple extensions at once.
+
+    Returns:
+        Tuple of (successful_installs, failed_installs)
+    """
+    successful = []
+    failed = []
+
+    console.print(f"\n[bold]Installing {len(names)} {ext_type}(s)...[/bold]\n")
+
+    for name in names:
+        try:
+            # Source path - look for .md file
+            extensions_dir = get_extensions_dir()
+            source_file = extensions_dir / f"{ext_type}s" / f"{name}.md"
+
+            if not source_file.exists():
+                console.print(f"  [red]❌ {name}: Not found[/red]")
+                failed.append(name)
+                continue
+
+            # Target path - also .md file
+            claude_dir = get_claude_dir(project_path)
+            target_file = claude_dir / f"{ext_type}s" / f"{name}.md"
+
+            # Check if already exists
+            if target_file.exists() and not force:
+                console.print(f"  [yellow]⚠️  {name}: Already installed (use --force to overwrite)[/yellow]")
+                failed.append(name)
+                continue
+
+            # Create directory structure
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Copy file
+            shutil.copy2(source_file, target_file)
+
+            console.print(f"  [green]✅ {name}: Installed successfully[/green]")
+            successful.append(name)
+
+        except Exception as e:
+            console.print(f"  [red]❌ {name}: Failed - {str(e)}[/red]")
+            failed.append(name)
+
+    return successful, failed
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -427,6 +755,8 @@ def main(
         print("  claude-ext interactive                        # Start interactive mode")
         print("  claude-ext agent list")
         print("  claude-ext agent install security-scanner")
+        print("  claude-ext agent install scanner analyzer -f  # Install multiple")
+        print("  claude-ext command install -i                   # Interactive multi-select")
         print("  claude-ext command install smart-commit --project ~/my-project")
         print("\nRun 'claude-ext [COMMAND] --help' for more information")
 
