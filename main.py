@@ -49,6 +49,121 @@ def get_extensions_dir() -> Path:
     return Path(__file__).parent / "extensions"
 
 
+def get_claude_projects() -> List[Tuple[str, Path]]:
+    """Get list of available Claude projects.
+
+    Returns:
+        List of tuples containing (friendly_name, full_path)
+    """
+    projects_dir = Path.home() / ".claude" / "projects"
+    if not projects_dir.exists():
+        return []
+
+    projects = []
+    for project_dir in projects_dir.iterdir():
+        if project_dir.is_dir():
+            # The directory name format is path components separated by hyphens
+            # e.g., "-Users-chris-cheng-projects-chris-my-awesome-claude-code"
+            # Challenge: both path separators AND hyphens in names become hyphens
+            encoded_name = project_dir.name
+
+            # Remove leading hyphen if present
+            if encoded_name.startswith("-"):
+                encoded_name = encoded_name[1:]
+
+            # Try multiple reconstruction strategies to find the actual path
+            # This is necessary because hyphens in project names are indistinguishable
+            # from path separator hyphens in the encoding
+            parts = encoded_name.split("-")
+
+            # Strategy: We know it starts with Users/username on macOS
+            # Try to find a valid path by testing different combinations
+            if parts[0] == "Users" and len(parts) > 2:
+                home_path = Path.home()
+                home_parts = str(home_path).split("/")
+
+                if len(home_parts) > 2:
+                    actual_username = home_parts[2]
+                    username_dot_parts = actual_username.split(".")
+
+                    # Find where the username ends in the parts list
+                    username_end_idx = len(username_dot_parts) + 1  # +1 for "Users"
+
+                    # Start with base path
+                    base_path = Path("/Users") / actual_username
+
+                    # Now we have the remaining parts after the username
+                    remaining = parts[username_end_idx:]
+
+                    # Try to find valid paths by testing different combinations
+                    # Start from the end and work backwards, joining with hyphens
+                    found_path = None
+
+                    # Try different split points to handle hyphenated directory names
+                    for i in range(len(remaining), 0, -1):
+                        # Try treating the last i parts as a single hyphenated name
+                        if i == len(remaining):
+                            # All parts separate
+                            test_path = base_path
+                            for part in remaining:
+                                if part:  # Skip empty parts
+                                    test_path = test_path / part
+                        else:
+                            # Join the last (len(remaining) - i + 1) parts with hyphens
+                            test_path = base_path
+                            # Add the first parts as separate directories
+                            for j in range(i - 1):
+                                if remaining[j]:
+                                    test_path = test_path / remaining[j]
+                            # Join the remaining parts with hyphens as a single directory
+                            if i - 1 < len(remaining):
+                                hyphenated = "-".join(remaining[i-1:])
+                                if hyphenated:
+                                    test_path = test_path / hyphenated
+
+                        if test_path.exists() and test_path.is_dir():
+                            found_path = test_path
+                            break
+
+                    if found_path:
+                        actual_path = found_path
+                    else:
+                        # Fallback: try the most likely pattern
+                        # (projects folder usually comes after username)
+                        actual_path = base_path
+                        for part in remaining:
+                            if part:
+                                actual_path = actual_path / part
+                else:
+                    # Fallback to simple join
+                    actual_path = Path("/" + "/".join(parts))
+            else:
+                # For non-macOS or unrecognized patterns
+                actual_path = Path("/" + "/".join(parts))
+
+            # Only add if the path exists
+            if actual_path.exists() and actual_path.is_dir():
+                # Get a friendly project name from the last few meaningful parts
+                path_str = str(actual_path)
+                path_parts = path_str.split("/")
+
+                # Find the project name - usually the last component or last few
+                if "projects" in path_parts:
+                    idx = path_parts.index("projects")
+                    if idx < len(path_parts) - 1:
+                        # Get everything after "projects" as the project identifier
+                        project_parts = path_parts[idx+1:]
+                        project_name = "/".join(project_parts)
+                    else:
+                        project_name = path_parts[-1] if path_parts else "unknown"
+                else:
+                    project_name = path_parts[-1] if path_parts else "unknown"
+
+                projects.append((project_name, actual_path))
+
+    return sorted(projects, key=lambda x: x[0].lower())
+
+
 def list_available(ext_type: str):
     """List available extensions of given type."""
     extensions_dir = get_extensions_dir()
@@ -331,6 +446,27 @@ def command_uninstall(
 
 
 @app.command()
+def list_projects():
+    """List available Claude projects."""
+    projects = get_claude_projects()
+
+    if not projects:
+        console.print("[yellow]No Claude projects found[/yellow]")
+        console.print("[dim]Projects are created when you use Claude Code in a directory[/dim]")
+        return
+
+    table = Table(title="Available Claude Projects")
+    table.add_column("Project Name", style="green")
+    table.add_column("Path", style="dim")
+
+    for name, path in projects:
+        table.add_row(name, str(path))
+
+    console.print(table)
+    console.print("\n[dim]Use --project <path> to install to a specific project[/dim]")
+
+
+@app.command()
 def interactive():
     """Interactive mode for managing extensions"""
     console.print("[bold cyan]Claude Code Extensions Manager - Interactive Mode[/bold cyan]\n")
@@ -384,16 +520,50 @@ def interactive():
             if level == "user-level (~/.claude)":
                 project = None
             else:
-                # For project level, ask for path using select from common options
+                # Get available Claude projects
+                claude_projects = get_claude_projects()
+
+                # Build project choices
+                project_choices = []
+                if claude_projects:
+                    project_choices.append("--- Claude Projects ---")
+                    for name, _ in claude_projects:
+                        project_choices.append(f"  📁 {name}")
+                    project_choices.append("--- Other Locations ---")
+
+                project_choices.extend([
+                    "current directory (.)",
+                    "parent directory (..)",
+                    "enter custom path"
+                ])
+
                 project_choice = single_select(
-                    ["current directory (.)", "parent directory (..)", "enter custom path"],
+                    project_choices,
                     title="Select project location",
-                    default_index=0
+                    default_index=0 if not claude_projects else len(claude_projects) + 2
                 )
-                if project_choice == "current directory (.)":
+
+                # Parse the selection
+                project = None  # Initialize to avoid UnboundLocalError
+                if project_choice.startswith("  📁 "):
+                    # It's a Claude project
+                    selected_name = project_choice[5:]  # Remove "  📁 " prefix
+                    # Find the matching project
+                    for name, path in claude_projects:
+                        if name == selected_name:
+                            project = path
+                            break
+                    if project is None:
+                        console.print(f"[red]Error: Could not find project '{selected_name}'[/red]")
+                        raise typer.Exit()
+                elif project_choice == "current directory (.)":
                     project = Path(".")
                 elif project_choice == "parent directory (..)":
                     project = Path("..")
+                elif project_choice in ["--- Claude Projects ---", "--- Other Locations ---"]:
+                    # User selected a separator, treat as cancelled
+                    console.print("[yellow]Operation cancelled[/yellow]")
+                    raise typer.Exit()
                 else:
                     project = Path(Prompt.ask("Enter project path", default="."))
 
@@ -448,18 +618,53 @@ def interactive():
                 project = None
                 console.print("[dim]Installing to user level (~/.claude)[/dim]")
             else:
-                # For project level, ask for path using select from common options
+                # Get available Claude projects
+                claude_projects = get_claude_projects()
+
+                # Build project choices
+                project_choices = []
+                if claude_projects:
+                    project_choices.append("--- Claude Projects ---")
+                    for name, _ in claude_projects:
+                        project_choices.append(f"  📁 {name}")
+                    project_choices.append("--- Other Locations ---")
+
+                project_choices.extend([
+                    "current directory (.)",
+                    "parent directory (..)",
+                    "enter custom path"
+                ])
+
                 project_choice = single_select(
-                    ["current directory (.)", "parent directory (..)", "enter custom path"],
+                    project_choices,
                     title="Select project location",
-                    default_index=0
+                    default_index=0 if not claude_projects else len(claude_projects) + 2
                 )
-                if project_choice == "current directory (.)":
+
+                # Parse the selection
+                project = None  # Initialize to avoid UnboundLocalError
+                if project_choice.startswith("  📁 "):
+                    # It's a Claude project
+                    selected_name = project_choice[5:]  # Remove "  📁 " prefix
+                    # Find the matching project
+                    for name, path in claude_projects:
+                        if name == selected_name:
+                            project = path
+                            break
+                    if project is None:
+                        console.print(f"[red]Error: Could not find project '{selected_name}'[/red]")
+                        raise typer.Exit()
+                elif project_choice == "current directory (.)":
                     project = Path(".")
                 elif project_choice == "parent directory (..)":
                     project = Path("..")
+                elif project_choice in ["--- Claude Projects ---", "--- Other Locations ---"]:
+                    # User selected a separator, treat as cancelled
+                    console.print("[yellow]Installation cancelled[/yellow]")
+                    raise typer.Exit()
                 else:
                     project = Path(Prompt.ask("Enter project path", default="."))
+
                 console.print(f"[dim]Installing to project: {project}[/dim]")
 
             # Confirm using select
@@ -501,18 +706,53 @@ def interactive():
                 project = None
                 console.print("[dim]Installing to user level (~/.claude)[/dim]")
             else:
-                # For project level, ask for path using select from common options
+                # Get available Claude projects
+                claude_projects = get_claude_projects()
+
+                # Build project choices
+                project_choices = []
+                if claude_projects:
+                    project_choices.append("--- Claude Projects ---")
+                    for name, _ in claude_projects:
+                        project_choices.append(f"  📁 {name}")
+                    project_choices.append("--- Other Locations ---")
+
+                project_choices.extend([
+                    "current directory (.)",
+                    "parent directory (..)",
+                    "enter custom path"
+                ])
+
                 project_choice = single_select(
-                    ["current directory (.)", "parent directory (..)", "enter custom path"],
+                    project_choices,
                     title="Select project location",
-                    default_index=0
+                    default_index=0 if not claude_projects else len(claude_projects) + 2
                 )
-                if project_choice == "current directory (.)":
+
+                # Parse the selection
+                project = None  # Initialize to avoid UnboundLocalError
+                if project_choice.startswith("  📁 "):
+                    # It's a Claude project
+                    selected_name = project_choice[5:]  # Remove "  📁 " prefix
+                    # Find the matching project
+                    for name, path in claude_projects:
+                        if name == selected_name:
+                            project = path
+                            break
+                    if project is None:
+                        console.print(f"[red]Error: Could not find project '{selected_name}'[/red]")
+                        raise typer.Exit()
+                elif project_choice == "current directory (.)":
                     project = Path(".")
                 elif project_choice == "parent directory (..)":
                     project = Path("..")
+                elif project_choice in ["--- Claude Projects ---", "--- Other Locations ---"]:
+                    # User selected a separator, treat as cancelled
+                    console.print("[yellow]Installation cancelled[/yellow]")
+                    raise typer.Exit()
                 else:
                     project = Path(Prompt.ask("Enter project path", default="."))
+
                 console.print(f"[dim]Installing to project: {project}[/dim]")
 
             # Confirm using select
@@ -540,16 +780,50 @@ def interactive():
         if level == "user-level (~/.claude)":
             project = None
         else:
-            # For project level, ask for path using select from common options
+            # Get available Claude projects
+            claude_projects = get_claude_projects()
+
+            # Build project choices
+            project_choices = []
+            if claude_projects:
+                project_choices.append("--- Claude Projects ---")
+                for name, _ in claude_projects:
+                    project_choices.append(f"  📁 {name}")
+                project_choices.append("--- Other Locations ---")
+
+            project_choices.extend([
+                "current directory (.)",
+                "parent directory (..)",
+                "enter custom path"
+            ])
+
             project_choice = single_select(
-                ["current directory (.)", "parent directory (..)", "enter custom path"],
+                project_choices,
                 title="Select project location",
-                default_index=0
+                default_index=0 if not claude_projects else len(claude_projects) + 2
             )
-            if project_choice == "current directory (.)":
+
+            # Parse the selection
+            project = None  # Initialize to avoid UnboundLocalError
+            if project_choice.startswith("  📁 "):
+                # It's a Claude project
+                selected_name = project_choice[5:]  # Remove "  📁 " prefix
+                # Find the matching project
+                for name, path in claude_projects:
+                    if name == selected_name:
+                        project = path
+                        break
+                if project is None:
+                    console.print(f"[red]Error: Could not find project '{selected_name}'[/red]")
+                    raise typer.Exit()
+            elif project_choice == "current directory (.)":
                 project = Path(".")
             elif project_choice == "parent directory (..)":
                 project = Path("..")
+            elif project_choice in ["--- Claude Projects ---", "--- Other Locations ---"]:
+                # User selected a separator, treat as cancelled
+                console.print("[yellow]Operation cancelled[/yellow]")
+                raise typer.Exit()
             else:
                 project = Path(Prompt.ask("Enter project path", default="."))
 
@@ -802,16 +1076,18 @@ def main(
         print("[cyan]Claude Code Extensions Manager[/cyan]")
         print("\nUsage: claude-ext [agent|command|interactive] [OPTIONS]")
         print("\nCommands:")
-        print("  agent        Manage Claude Code agents")
-        print("  command      Manage Claude Code commands")
-        print("  interactive  Interactive mode (guided)")
+        print("  agent         Manage Claude Code agents")
+        print("  command       Manage Claude Code commands")
+        print("  interactive   Interactive mode (guided)")
+        print("  list-projects List available Claude projects")
         print("\nExamples:")
-        print("  claude-ext                                     # Start interactive mode (default)")
-        print("  claude-ext interactive                        # Start interactive mode")
+        print("  claude-ext                                      # Start interactive mode (default)")
+        print("  claude-ext interactive                         # Start interactive mode")
+        print("  claude-ext list-projects                       # List available Claude projects")
         print("  claude-ext agent list")
         print("  claude-ext agent install security-scanner")
-        print("  claude-ext agent install scanner analyzer -f  # Install multiple")
-        print("  claude-ext command install -i                   # Interactive multi-select")
+        print("  claude-ext agent install scanner analyzer -f   # Install multiple")
+        print("  claude-ext command install -i                  # Interactive multi-select")
         print("  claude-ext command install smart-commit --project ~/my-project")
         print("\nRun 'claude-ext [COMMAND] --help' for more information")
         raise typer.Exit()
