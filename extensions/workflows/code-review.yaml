@@ -1,0 +1,34 @@
+name: code-review
+description: "Automated code review with quality gates"
+level: project  # can be 'user' or 'project'
+complexity: 8
+
+# Main command (entrypoint)
+command:
+  name: review
+  description: "Execute code review workflow"
+  thinking_level: "think harder"
+
+# Agents that support this workflow
+agents:
+  - name: code-analyzer
+    description: "Analyze code for quality issues"
+    thinking_level: "ultrathink"
+
+  - name: style-checker
+    description: "Check code style and formatting"
+    thinking_level: "think hard"
+
+  - name: security-scanner
+    description: "Scan for security vulnerabilities"
+    thinking_level: "ultrathink"
+
+# Additional helper commands (optional)
+helper_commands:
+  - name: review-pr
+    description: "Review a pull request"
+    thinking_level: "think harder"
+
+  - name: review-commit
+    description: "Review a specific commit"
+    thinking_level: "think harder"

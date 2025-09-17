@@ -6,8 +6,9 @@ Claude Code Extensions Manager - Simple CLI for managing Claude Code extensions
 import os
 import shutil
 import sys
+import yaml
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict, Any
 
 import typer
 import questionary
@@ -27,12 +28,14 @@ app = typer.Typer(
 )
 console = Console()
 
-# Create subcommands for agent and command
+# Create subcommands for agent, command, and workflow
 agent_app = typer.Typer(help="Manage Claude Code agents")
 command_app = typer.Typer(help="Manage Claude Code commands")
+workflow_app = typer.Typer(help="Manage Claude Code workflows")
 
 app.add_typer(agent_app, name="agent")
 app.add_typer(command_app, name="command")
+app.add_typer(workflow_app, name="workflow")
 
 
 def get_claude_dir(project_path: Optional[Path] = None) -> Path:
@@ -174,9 +177,14 @@ def list_available(ext_type: str):
 
     results = []
     for item in type_dir.iterdir():
-        if item.is_file() and item.suffix == '.md':
-            # Remove .md extension from name
-            results.append(item.stem)
+        if ext_type == "workflow":
+            # Workflows use YAML files
+            if item.is_file() and item.suffix in ['.yaml', '.yml']:
+                results.append(item.stem)
+        else:
+            # Agents and commands use MD files
+            if item.is_file() and item.suffix == '.md':
+                results.append(item.stem)
 
     return results
 
@@ -196,6 +204,17 @@ def list_installed(ext_type: str, project_path: Optional[Path] = None):
             results.append((item.stem, str(item)))
 
     return results
+
+
+def check_extension_exists(
+    ext_type: str,
+    name: str,
+    project_path: Optional[Path] = None
+) -> bool:
+    """Check if an extension is already installed."""
+    claude_dir = get_claude_dir(project_path)
+    target_file = claude_dir / f"{ext_type}s" / f"{name}.md"
+    return target_file.exists()
 
 
 def install_extension(
@@ -473,7 +492,7 @@ def interactive():
 
     # Choose extension type using select
     ext_type = single_select(
-        ["agent", "command", "quit"],
+        ["workflow", "agent", "command", "quit"],
         title="What would you like to manage?",
         default_index=0
     )
@@ -483,8 +502,13 @@ def interactive():
         raise typer.Exit()
 
     # Choose action using select
+    if ext_type == "workflow":
+        actions = ["list", "install", "info", "quit"]
+    else:
+        actions = ["list", "install", "uninstall", "quit"]
+
     action = single_select(
-        ["list", "install", "uninstall", "quit"],
+        actions,
         title=f"What would you like to do with {ext_type}s?",
         default_index=0
     )
@@ -576,6 +600,21 @@ def interactive():
                 for name, location in installed:
                     console.print(f"  • [green]{name}[/green] ({location})")
 
+    elif action == "info" and ext_type == "workflow":
+        # Show workflow info
+        workflows = list_available("workflow")
+        if not workflows:
+            console.print("[yellow]No workflows available[/yellow]")
+            raise typer.Exit()
+
+        selected = single_select(
+            sorted(workflows),
+            title="Select workflow to get info about",
+            default_index=0
+        )
+        if selected:
+            workflow_info(selected)
+
     elif action == "install":
         # Show available extensions
         extensions = list_available(ext_type)
@@ -583,13 +622,21 @@ def interactive():
             console.print(f"[yellow]No {ext_type}s available to install[/yellow]")
             raise typer.Exit()
 
-        # Ask for selection mode using select
-        mode = single_select(
-            ["multiple (select many)", "single (select one)"],
-            title="Selection mode?",
-            default_index=0
-        )
-        mode = "multiple" if "multiple" in mode else "single"
+        # Determine selection mode intelligently
+        if ext_type == "workflow":
+            # Workflows are always single selection
+            mode = "single"
+        elif len(extensions) <= 3:
+            # For small lists, default to single selection
+            mode = "single"
+        else:
+            # For larger lists, ask user preference
+            mode = single_select(
+                ["multiple (select many)", "single (select one)"],
+                title="Selection mode?",
+                default_index=0
+            )
+            mode = "multiple" if "multiple" in mode else "single"
 
         if mode == "multiple":
             # Multi-select mode
@@ -667,6 +714,39 @@ def interactive():
 
                 console.print(f"[dim]Installing to project: {project}[/dim]")
 
+            # Check for existing installations
+            existing_items = []
+            for item in selected_items:
+                if check_extension_exists(ext_type, item, project):
+                    existing_items.append(item)
+
+            if existing_items:
+                level_str = "project" if project else "user"
+                console.print(f"\n[yellow]⚠️  The following items are already installed at {level_str} level:[/yellow]")
+                for item in existing_items:
+                    console.print(f"  • {item}")
+
+                overwrite_choice = single_select(
+                    ["Overwrite all existing", "Skip existing", "Cancel installation"],
+                    title="What would you like to do?",
+                    default_index=1
+                )
+
+                if overwrite_choice == "Cancel installation":
+                    console.print("[yellow]Installation cancelled[/yellow]")
+                    raise typer.Exit()
+                elif overwrite_choice == "Skip existing":
+                    # Remove existing items from selection
+                    selected_items = [item for item in selected_items if item not in existing_items]
+                    if not selected_items:
+                        console.print("[yellow]No new items to install[/yellow]")
+                        raise typer.Exit()
+                    force = False
+                else:  # Overwrite all existing
+                    force = True
+            else:
+                force = False
+
             # Confirm using select
             confirm = single_select(
                 ["Yes, proceed", "No, cancel"],
@@ -674,7 +754,7 @@ def interactive():
                 default_index=0
             )
             if confirm == "Yes, proceed":
-                successful, failed = install_multiple_extensions(ext_type, selected_items, project)
+                successful, failed = install_multiple_extensions(ext_type, selected_items, project, force)
 
                 # Summary
                 console.print(f"\n[bold]Installation Summary:[/bold]")
@@ -755,20 +835,56 @@ def interactive():
 
                 console.print(f"[dim]Installing to project: {project}[/dim]")
 
-            # Confirm using select
-            confirm = single_select(
-                ["Yes, proceed", "No, cancel"],
-                title="Proceed with installation?",
-                default_index=0
-            )
-            if confirm == "Yes, proceed":
+            # Check if extension already exists
+            already_exists = False
+            force_install = False
+
+            if ext_type != "workflow":
+                already_exists = check_extension_exists(ext_type, selected, project)
+                if already_exists:
+                    level_str = "project" if project else "user"
+                    console.print(f"\n[yellow]⚠️  '{selected}' is already installed at {level_str} level[/yellow]")
+
+                    overwrite_choice = single_select(
+                        ["Overwrite existing", "Cancel installation"],
+                        title="What would you like to do?",
+                        default_index=0
+                    )
+
+                    if overwrite_choice == "Cancel installation":
+                        console.print("[yellow]Installation cancelled[/yellow]")
+                        raise typer.Exit()
+                    else:
+                        force_install = True
+                        console.print("[dim]Will overwrite existing installation...[/dim]")
+
+            # Confirm installation if not already handled
+            if not already_exists:
+                confirm = single_select(
+                    ["Yes, proceed", "No, cancel"],
+                    title="Proceed with installation?",
+                    default_index=0
+                )
+                if confirm != "Yes, proceed":
+                    console.print("[yellow]Installation cancelled[/yellow]")
+                    raise typer.Exit()
+
+            # Proceed with installation
+            if ext_type == "workflow":
+                # Install workflow
+                success, components = install_workflow(selected, project, force=force_install)
+                if not success and not components:
+                    console.print(f"[red]❌ Failed to install workflow '{selected}'[/red]")
+            else:
+                # Install single extension
                 try:
-                    install_extension(ext_type, selected, project)
-                    console.print(f"[green]✅ Successfully installed '{selected}'![/green]")
+                    install_extension(ext_type, selected, project, force=force_install)
+                    if force_install:
+                        console.print(f"[green]✅ Successfully installed '{selected}' (overwritten)![/green]")
+                    else:
+                        console.print(f"[green]✅ Successfully installed '{selected}'![/green]")
                 except typer.Exit:
                     pass  # Error already displayed
-            else:
-                console.print("[yellow]Installation cancelled[/yellow]")
 
     elif action == "uninstall":
         # Choose level first using select
@@ -872,6 +988,93 @@ def interactive():
     )
     if continue_choice == "Yes, continue":
         interactive()  # Recursive call to continue
+
+
+# Workflow commands
+@workflow_app.command("list")
+def workflow_list(
+    installed: bool = typer.Option(False, "--installed", "-i", help="Show installed workflows"),
+    project: Optional[Path] = typer.Option(None, "--project", "-p", help="Project path"),
+):
+    """List available workflows."""
+
+    if installed:
+        console.print("[yellow]Installed workflows cannot be tracked directly.[/yellow]")
+        console.print("[dim]Check installed agents and commands instead.[/dim]")
+        return
+
+    workflows = list_available("workflow")
+    if not workflows:
+        console.print("[yellow]No workflows available[/yellow]")
+        return
+
+    table = Table(title="Available Workflows")
+    table.add_column("Name", style="green")
+    table.add_column("Description", style="dim")
+
+    for name in sorted(workflows):
+        workflow_def = load_workflow_definition(name)
+        if workflow_def:
+            desc = workflow_def.get('description', 'No description')
+            table.add_row(name, desc)
+        else:
+            table.add_row(name, "No description")
+
+    console.print(table)
+    console.print("\n[dim]Install with: claude-ext workflow install <name>[/dim]")
+
+
+@workflow_app.command("install")
+def workflow_install(
+    name: str = typer.Argument(..., help="Workflow name to install"),
+    project: Optional[Path] = typer.Option(None, "--project", "-p", help="Project path (auto-detect from workflow if not specified)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing components"),
+):
+    """Install a Claude Code workflow (command + agents)."""
+    success, components = install_workflow(name, project, force)
+    if not success and not components:
+        raise typer.Exit(1)
+
+
+@workflow_app.command("info")
+def workflow_info(
+    name: str = typer.Argument(..., help="Workflow name to get info about"),
+):
+    """Show detailed information about a workflow."""
+    workflow_def = load_workflow_definition(name)
+    if not workflow_def:
+        console.print(f"[red]❌ Workflow '{name}' not found[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold cyan]Workflow: {name}[/bold cyan]")
+    console.print(f"[dim]{workflow_def.get('description', 'No description')}[/dim]\n")
+
+    console.print(f"[bold]Level:[/bold] {workflow_def.get('level', 'project')}")
+    console.print(f"[bold]Complexity:[/bold] {workflow_def.get('complexity', 'N/A')}/10\n")
+
+    # Main command
+    if 'command' in workflow_def:
+        cmd = workflow_def['command']
+        console.print(f"[bold]Main Command:[/bold]")
+        console.print(f"  • /{cmd['name']} - {cmd.get('description', 'No description')}")
+        if 'thinking_level' in cmd:
+            console.print(f"    [dim]Thinking: {cmd['thinking_level']}[/dim]")
+
+    # Agents
+    if 'agents' in workflow_def:
+        console.print(f"\n[bold]Agents ({len(workflow_def['agents'])}):[/bold]")
+        for agent in workflow_def['agents']:
+            console.print(f"  • @{agent['name']} - {agent.get('description', 'No description')}")
+            if 'thinking_level' in agent:
+                console.print(f"    [dim]Thinking: {agent['thinking_level']}[/dim]")
+
+    # Helper commands
+    if 'helper_commands' in workflow_def:
+        console.print(f"\n[bold]Helper Commands ({len(workflow_def['helper_commands'])}):[/bold]")
+        for cmd in workflow_def['helper_commands']:
+            console.print(f"  • /{cmd['name']} - {cmd.get('description', 'No description')}")
+            if 'thinking_level' in cmd:
+                console.print(f"    [dim]Thinking: {cmd['thinking_level']}[/dim]")
 
 
 def single_select(
@@ -1007,6 +1210,111 @@ def _multi_select_numbered(
     return list(selected)
 
 
+def load_workflow_definition(workflow_name: str) -> Dict[str, Any]:
+    """Load workflow definition from YAML file."""
+    extensions_dir = get_extensions_dir()
+
+    # Try both .yaml and .yml extensions
+    for ext in ['.yaml', '.yml']:
+        workflow_file = extensions_dir / "workflows" / f"{workflow_name}{ext}"
+        if workflow_file.exists():
+            with open(workflow_file, 'r') as f:
+                return yaml.safe_load(f)
+
+    return None
+
+
+def install_workflow(
+    name: str,
+    project_path: Optional[Path] = None,
+    force: bool = False
+) -> Tuple[bool, List[str]]:
+    """Install a workflow (command + agents).
+
+    Returns:
+        Tuple of (success, list_of_installed_components)
+    """
+    # Load workflow definition
+    workflow_def = load_workflow_definition(name)
+    if not workflow_def:
+        console.print(f"[red]❌ Workflow '{name}' not found[/red]")
+        return False, []
+
+    # Determine installation level
+    if workflow_def.get('level') == 'user':
+        # User-level workflow
+        target_path = None
+        level_str = "user"
+    else:
+        # Project-level workflow
+        target_path = project_path
+        level_str = "project"
+
+    installed_components = []
+    all_success = True
+
+    console.print(f"\n[bold cyan]Installing '{name}' workflow ({level_str} level)...[/bold cyan]")
+    console.print(f"[dim]{workflow_def.get('description', 'No description')}[/dim]\n")
+
+    # Install main command
+    if 'command' in workflow_def:
+        cmd = workflow_def['command']
+        console.print(f"[bold]Main Command:[/bold]")
+
+        # Check if corresponding .md file exists
+        cmd_source = get_extensions_dir() / "commands" / f"{cmd['name']}.md"
+        if cmd_source.exists():
+            try:
+                install_extension("command", cmd['name'], target_path, force)
+                installed_components.append(f"command:{cmd['name']}")
+            except:
+                console.print(f"  [yellow]⚠️  Command '{cmd['name']}' already installed or failed[/yellow]")
+                all_success = False
+        else:
+            console.print(f"  [yellow]⚠️  Command file '{cmd['name']}.md' not found[/yellow]")
+
+    # Install agents
+    if 'agents' in workflow_def:
+        console.print(f"\n[bold]Agents ({len(workflow_def['agents'])}):[/bold]")
+        for agent in workflow_def['agents']:
+            # Check if corresponding .md file exists
+            agent_source = get_extensions_dir() / "agents" / f"{agent['name']}.md"
+            if agent_source.exists():
+                try:
+                    install_extension("agent", agent['name'], target_path, force)
+                    installed_components.append(f"agent:{agent['name']}")
+                except:
+                    console.print(f"  [yellow]⚠️  Agent '{agent['name']}' already installed or failed[/yellow]")
+                    all_success = False
+            else:
+                console.print(f"  [yellow]⚠️  Agent file '{agent['name']}.md' not found[/yellow]")
+
+    # Install helper commands
+    if 'helper_commands' in workflow_def:
+        console.print(f"\n[bold]Helper Commands ({len(workflow_def['helper_commands'])}):[/bold]")
+        for cmd in workflow_def['helper_commands']:
+            # Check if corresponding .md file exists
+            cmd_source = get_extensions_dir() / "commands" / f"{cmd['name']}.md"
+            if cmd_source.exists():
+                try:
+                    install_extension("command", cmd['name'], target_path, force)
+                    installed_components.append(f"command:{cmd['name']}")
+                except:
+                    console.print(f"  [yellow]⚠️  Command '{cmd['name']}' already installed or failed[/yellow]")
+                    all_success = False
+            else:
+                console.print(f"  [yellow]⚠️  Command file '{cmd['name']}.md' not found[/yellow]")
+
+    if installed_components:
+        console.print(f"\n[green]✅ Workflow '{name}' installation completed[/green]")
+        console.print(f"[dim]Installed {len(installed_components)} components[/dim]")
+    else:
+        console.print(f"\n[red]❌ No components were installed[/red]")
+        all_success = False
+
+    return all_success, installed_components
+
+
 def install_multiple_extensions(
     ext_type: str,
     names: List[str],
@@ -1074,8 +1382,9 @@ def main(
     if help and ctx.invoked_subcommand is None:
         # Show help if explicitly requested
         print("[cyan]Claude Code Extensions Manager[/cyan]")
-        print("\nUsage: claude-ext [agent|command|interactive] [OPTIONS]")
+        print("\nUsage: claude-ext [workflow|agent|command|interactive] [OPTIONS]")
         print("\nCommands:")
+        print("  workflow      Manage Claude Code workflows (command + agents)")
         print("  agent         Manage Claude Code agents")
         print("  command       Manage Claude Code commands")
         print("  interactive   Interactive mode (guided)")
@@ -1084,6 +1393,9 @@ def main(
         print("  claude-ext                                      # Start interactive mode (default)")
         print("  claude-ext interactive                         # Start interactive mode")
         print("  claude-ext list-projects                       # List available Claude projects")
+        print("  claude-ext workflow list                       # List available workflows")
+        print("  claude-ext workflow info code-review           # Show workflow details")
+        print("  claude-ext workflow install project-init       # Install a workflow")
         print("  claude-ext agent list")
         print("  claude-ext agent install security-scanner")
         print("  claude-ext agent install scanner analyzer -f   # Install multiple")

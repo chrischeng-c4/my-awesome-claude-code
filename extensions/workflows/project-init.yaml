@@ -1,0 +1,30 @@
+name: project-init
+description: "Scaffold new projects with complete setup"
+level: user  # user-level since it creates new projects
+complexity: 6
+
+# Main command (entrypoint)
+command:
+  name: project-init
+  description: "Initialize a new project with best practices"
+  thinking_level: "think hard"
+
+# Agents that support this workflow
+agents:
+  - name: scaffold-analyzer
+    description: "Analyze project requirements and select appropriate templates"
+    thinking_level: "think harder"
+
+  - name: project-builder
+    description: "Build project structure and files"
+    thinking_level: "think hard"
+
+  - name: environment-setup
+    description: "Configure development environment and dependencies"
+    thinking_level: "think hard"
+
+# Additional helper commands (optional)
+helper_commands:
+  - name: project-validate
+    description: "Validate project setup"
+    thinking_level: "think hard"

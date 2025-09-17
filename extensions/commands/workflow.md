@@ -215,12 +215,133 @@ Strategies for token efficiency:
 
 ## Phase 3: Workflow Implementation
 
+### 3.0 Complexity Assessment System
+
+Evaluate workflow complexity to assign appropriate thinking levels:
+
+```bash
+# Calculate workflow complexity score (0-10)
+calculate_complexity() {
+    local name="$1"
+    local desc="$2"
+    local score=5  # Default medium complexity
+
+    # Adjust score based on keywords in description
+    if [[ "$desc" =~ (simple|basic|utility|wrapper|helper|trivial) ]]; then
+        score=2
+    elif [[ "$desc" =~ (security|architect|critical|infrastructure|system|sensitive) ]]; then
+        score=9
+    elif [[ "$desc" =~ (analyze|refactor|optimize|complex|multi-step|orchestrate) ]]; then
+        score=7
+    elif [[ "$desc" =~ (generate|implement|create|build|develop) ]]; then
+        score=6
+    elif [[ "$desc" =~ (process|transform|convert|parse|extract) ]]; then
+        score=4
+    fi
+
+    # Adjust for workflow patterns
+    if [[ "$desc" =~ (parallel|concurrent|distributed) ]]; then
+        ((score++))
+    fi
+    if [[ "$desc" =~ (validate|verify|audit|review) ]]; then
+        ((score++))
+    fi
+
+    # Cap at 10
+    [ $score -gt 10 ] && score=10
+
+    echo $score
+}
+
+# Map complexity score to thinking level
+map_score_to_thinking_level() {
+    local score=$1
+
+    if [ $score -le 2 ]; then
+        echo ""  # No thinking level needed
+    elif [ $score -le 4 ]; then
+        echo "think"
+    elif [ $score -le 6 ]; then
+        echo "think hard"
+    elif [ $score -le 8 ]; then
+        echo "think harder"
+    else
+        echo "ultrathink"
+    fi
+}
+
+# Get thinking directive for prompts
+get_thinking_directive() {
+    local level="$1"
+
+    case "$level" in
+        "")           echo "" ;;
+        "think")      echo "think about" ;;
+        "think hard") echo "think hard about" ;;
+        "think harder") echo "think harder about" ;;
+        "ultrathink") echo "ultrathink about" ;;
+        *)            echo "" ;;
+    esac
+}
+
+# Get agent-specific thinking level
+get_agent_thinking_level() {
+    local agent_type="$1"
+    local base_complexity=$2
+
+    case "$agent_type" in
+        "analyzer")
+            # Analyzers need deep thinking
+            if [ $base_complexity -le 4 ]; then
+                echo "think hard"
+            elif [ $base_complexity -le 7 ]; then
+                echo "think harder"
+            else
+                echo "ultrathink"
+            fi
+            ;;
+        "executor")
+            # Executors need moderate thinking
+            if [ $base_complexity -le 3 ]; then
+                echo ""
+            elif [ $base_complexity -le 6 ]; then
+                echo "think"
+            else
+                echo "think hard"
+            fi
+            ;;
+        "validator")
+            # Validators need careful thinking
+            if [ $base_complexity -le 5 ]; then
+                echo "think hard"
+            else
+                echo "think harder"
+            fi
+            ;;
+        "coordinator")
+            # Coordinators need complex thinking
+            if [ $base_complexity -le 6 ]; then
+                echo "think harder"
+            else
+                echo "ultrathink"
+            fi
+            ;;
+        *)
+            map_score_to_thinking_level $base_complexity
+            ;;
+    esac
+}
+```
+
 ### 3.1 Agent Generation Strategy
 
-Create specialized agents for the workflow:
+Create specialized agents for the workflow with appropriate thinking levels:
 
 ```markdown
-For workflow "$1", generate agents:
+For workflow "$1", generate agents with intelligent thinking assignment:
+
+# Calculate workflow complexity
+COMPLEXITY_SCORE=$(calculate_complexity "$1" "$description")
 
 # Determine agent location based on workflow level
 AGENT_DIR = (workflow_level == "user") ? "~/.claude/agents/" : ".claude/agents/"
@@ -230,53 +351,144 @@ AGENT_DIR = (workflow_level == "user") ? "~/.claude/agents/" : ".claude/agents/"
    - Location: $AGENT_DIR
    - Role: Understand $1 requirements
    - Tools: Read, Grep, Glob
+   - Thinking: $(get_agent_thinking_level "analyzer" $COMPLEXITY_SCORE)
 
 2. **Executor Agent**
    - Name: $1-executor
    - Location: $AGENT_DIR
    - Role: Perform $1 operations
    - Tools: [workflow-specific]
+   - Thinking: $(get_agent_thinking_level "executor" $COMPLEXITY_SCORE)
 
 3. **Validator Agent**
    - Name: $1-validator
    - Location: $AGENT_DIR
    - Role: Ensure $1 quality
    - Tools: Bash, Read
+   - Thinking: $(get_agent_thinking_level "validator" $COMPLEXITY_SCORE)
 
 4. **Coordinator Agent** (if complex)
    - Name: $1-coordinator
    - Location: $AGENT_DIR
    - Role: Orchestrate $1 workflow
    - Tools: Task
+   - Thinking: $(get_agent_thinking_level "coordinator" $COMPLEXITY_SCORE)
+
+# Agent Generation Template
+@Task: Generate each agent with appropriate thinking directive:
+
+AGENT_THINKING=$(get_agent_thinking_level "$AGENT_TYPE" $COMPLEXITY_SCORE)
+THINKING_DIRECTIVE=$(get_thinking_directive "$AGENT_THINKING")
+
+cat > $AGENT_DIR/$1-$AGENT_TYPE.md << 'EOF'
+---
+allowed-tools: [...]
+thinking-level: "$AGENT_THINKING"
+description: "$AGENT_DESCRIPTION"
+---
+
+You are the $1 $AGENT_TYPE agent.
+
+$THINKING_DIRECTIVE performing $AGENT_TYPE operations for the $1 workflow.
+
+[Agent-specific instructions and patterns...]
+EOF
 ```
 
 ### 3.2 Command Generation Strategy
 
-Create intuitive entry points:
+Create intuitive entry points with appropriate thinking levels:
 
 ```markdown
-For workflow "$1", generate commands:
+For workflow "$1", generate commands with intelligent thinking assignment:
+
+# Calculate complexity for commands
+COMPLEXITY_SCORE=$(calculate_complexity "$1" "$description")
+COMMAND_THINKING=$(map_score_to_thinking_level $COMPLEXITY_SCORE)
+THINKING_DIRECTIVE=$(get_thinking_directive "$COMMAND_THINKING")
 
 # Determine command location based on workflow level
 CMD_DIR = (workflow_level == "user") ? "~/.claude/commands/" : ".claude/commands/"
 
 1. **Main Entry Command**
    Location: $CMD_DIR/$1.md
-   /update-command $1 "Execute $1 workflow" --agent=$1-coordinator
+   Thinking: $COMMAND_THINKING
+
+   @Task: Generate main command with thinking directive:
+
+   cat > $CMD_DIR/$1.md << 'EOF'
+   ---
+   allowed-tools: ["Task", "Bash", "Read", "Write"]
+   thinking-level: "$COMMAND_THINKING"
+   description: "Execute $1 workflow"
+   argument-hint: "<parameters>"
+   ---
+
+   # /$1
+
+   $THINKING_DIRECTIVE executing the $1 workflow to $description.
+
+   [Command implementation with coordinator agent invocation...]
+   EOF
 
 2. **Sub-Commands** (if needed)
+   # Analyze command - typically needs deeper thinking
+   ANALYZE_THINKING=$([ $COMPLEXITY_SCORE -ge 7 ] && echo "think harder" || echo "think hard")
+   ANALYZE_DIRECTIVE=$(get_thinking_directive "$ANALYZE_THINKING")
+
    Location: $CMD_DIR/$1-analyze.md
-   /update-command $1-analyze "Analyze for $1" --agent=$1-analyzer
+   cat > $CMD_DIR/$1-analyze.md << 'EOF'
+   ---
+   thinking-level: "$ANALYZE_THINKING"
+   ---
+
+   # /$1-analyze
+
+   $ANALYZE_DIRECTIVE analyzing requirements for $1.
+   EOF
+
+   # Validate command - needs careful thinking
+   VALIDATE_THINKING=$([ $COMPLEXITY_SCORE -ge 6 ] && echo "think hard" || echo "think")
+   VALIDATE_DIRECTIVE=$(get_thinking_directive "$VALIDATE_THINKING")
 
    Location: $CMD_DIR/$1-validate.md
-   /update-command $1-validate "Validate $1 results" --agent=$1-validator
+   cat > $CMD_DIR/$1-validate.md << 'EOF'
+   ---
+   thinking-level: "$VALIDATE_THINKING"
+   ---
+
+   # /$1-validate
+
+   $VALIDATE_DIRECTIVE validating $1 results for quality and correctness.
+   EOF
 
 3. **Helper Commands**
+   # Status command - simple, no deep thinking needed
    Location: $CMD_DIR/$1-status.md
-   /update-command $1-status "Check $1 workflow status"
+   cat > $CMD_DIR/$1-status.md << 'EOF'
+   ---
+   thinking-level: ""
+   ---
+
+   # /$1-status
+
+   Check the current status of the $1 workflow.
+   EOF
+
+   # Rollback command - needs careful thinking
+   ROLLBACK_THINKING=$([ $COMPLEXITY_SCORE -ge 7 ] && echo "think harder" || echo "think hard")
+   ROLLBACK_DIRECTIVE=$(get_thinking_directive "$ROLLBACK_THINKING")
 
    Location: $CMD_DIR/$1-rollback.md
-   /update-command $1-rollback "Rollback $1 changes"
+   cat > $CMD_DIR/$1-rollback.md << 'EOF'
+   ---
+   thinking-level: "$ROLLBACK_THINKING"
+   ---
+
+   # /$1-rollback
+
+   $ROLLBACK_DIRECTIVE safely rolling back $1 changes while preserving system integrity.
+   EOF
 ```
 
 ### 3.3 Orchestration Pattern Implementation
@@ -389,10 +601,17 @@ User → /$1 → Coordinator
 ```bash
 /workflow project-init "Scaffold new projects with complete setup" --user
 # Auto-detected as user-level due to "init" and "scaffold" keywords
+# Complexity: 6/10 (keywords: scaffold, setup)
+# Base thinking: "think hard"
 
 Creates (in ~/.claude/):
-- Agents: scaffold-analyzer, project-builder, environment-setup
-- Commands: /project-init, /project-validate
+- Agents:
+  - scaffold-analyzer [thinking: "think harder"]
+  - project-builder [thinking: "think hard"]
+  - environment-setup [thinking: "think hard"]
+- Commands:
+  - /project-init [thinking: "think hard"]
+  - /project-validate [thinking: "think hard"]
 - Docs: None (user-level docs not accessible)
 ```
 
@@ -401,10 +620,18 @@ Creates (in ~/.claude/):
 ```bash
 /workflow code-review "Automated code review with quality gates" --project
 # Auto-detected as project-level due to "review" keyword
+# Complexity: 8/10 (keywords: review, quality + validation pattern)
+# Base thinking: "think harder"
 
 Creates (in .claude/):
-- Agents: code-analyzer, style-checker, security-scanner
-- Commands: /review, /review-pr, /review-commit
+- Agents:
+  - code-analyzer [thinking: "ultrathink"]
+  - style-checker [thinking: "think hard"]
+  - security-scanner [thinking: "ultrathink"]
+- Commands:
+  - /review [thinking: "think harder"]
+  - /review-pr [thinking: "think harder"]
+  - /review-commit [thinking: "think harder"]
 - Docs: docs/workflows/code-review.md
 ```
 
@@ -412,10 +639,18 @@ Creates (in .claude/):
 
 ```bash
 /workflow feature-dev "TDD-based feature development"
+# Complexity: 6/10 (keywords: development)
+# Base thinking: "think hard"
 
 Creates:
-- Agents: requirement-analyzer, test-writer, implementer
-- Commands: /feature, /feature-test, /feature-implement
+- Agents:
+  - requirement-analyzer [thinking: "think harder"]
+  - test-writer [thinking: "think"]
+  - implementer [thinking: "think hard"]
+- Commands:
+  - /feature [thinking: "think hard"]
+  - /feature-test [thinking: "think"]
+  - /feature-implement [thinking: "think hard"]
 - Docs: docs/workflows/feature-dev.md
 ```
 
@@ -423,10 +658,18 @@ Creates:
 
 ```bash
 /workflow refactor "Safe refactoring with validation"
+# Complexity: 8/10 (keywords: refactor + validation)
+# Base thinking: "think harder"
 
 Creates:
-- Agents: code-analyzer, refactorer, test-runner
-- Commands: /refactor, /refactor-preview, /refactor-validate
+- Agents:
+  - code-analyzer [thinking: "ultrathink"]
+  - refactorer [thinking: "think hard"]
+  - test-runner [thinking: "think hard"]
+- Commands:
+  - /refactor [thinking: "think harder"]
+  - /refactor-preview [thinking: "think harder"]
+  - /refactor-validate [thinking: "think hard"]
 - Docs: docs/workflows/refactor.md
 ```
 
@@ -434,11 +677,55 @@ Creates:
 
 ```bash
 /workflow docs "Intelligent documentation management"
+# Complexity: 5/10 (default medium complexity)
+# Base thinking: "think hard"
 
 Creates:
-- Agents: doc-analyzer, doc-writer, doc-optimizer
-- Commands: /docs-update, /docs-optimize, /docs-validate
+- Agents:
+  - doc-analyzer [thinking: "think harder"]
+  - doc-writer [thinking: "think"]
+  - doc-optimizer [thinking: "think"]
+- Commands:
+  - /docs-update [thinking: "think hard"]
+  - /docs-optimize [thinking: "think"]
+  - /docs-validate [thinking: "think"]
 - Docs: docs/workflows/documentation.md
+```
+
+### Template 5: Security Audit Workflow
+
+```bash
+/workflow security-audit "Comprehensive security vulnerability scanning"
+# Complexity: 10/10 (keywords: security, critical)
+# Base thinking: "ultrathink"
+
+Creates:
+- Agents:
+  - vulnerability-scanner [thinking: "ultrathink"]
+  - threat-analyzer [thinking: "ultrathink"]
+  - security-reporter [thinking: "think harder"]
+- Commands:
+  - /security-audit [thinking: "ultrathink"]
+  - /security-scan [thinking: "ultrathink"]
+  - /security-report [thinking: "think harder"]
+- Docs: docs/workflows/security-audit.md
+```
+
+### Template 6: Simple Utility Workflow
+
+```bash
+/workflow file-rename "Simple batch file renaming utility"
+# Complexity: 2/10 (keywords: simple, utility)
+# Base thinking: none
+
+Creates:
+- Agents:
+  - file-scanner [thinking: none]
+  - rename-executor [thinking: none]
+- Commands:
+  - /file-rename [thinking: none]
+  - /file-rename-preview [thinking: none]
+- Docs: docs/workflows/file-rename.md
 ```
 
 ## Self-Improvement Mechanisms
@@ -558,6 +845,8 @@ After creating a workflow:
 **Level**: [User-Level | Project-Level]
 **Location**: [~/.claude/ | .claude/]
 **Description**: $description
+**Complexity Score**: $COMPLEXITY_SCORE/10
+**Base Thinking Level**: $COMMAND_THINKING
 
 ### Documentation Updates (if project-level)
 - README.md: Reorganized, $token-reduction% smaller
@@ -567,27 +856,39 @@ After creating a workflow:
 
 ### Infrastructure Created
 
-#### Agents (4)
-- @$1-analyzer: Requirements analysis
-- @$1-executor: Core execution
-- @$1-validator: Quality assurance
-- @$1-coordinator: Orchestration
+#### Agents (4) with Thinking Levels
+- @$1-analyzer: Requirements analysis [thinking: $ANALYZER_THINKING]
+- @$1-executor: Core execution [thinking: $EXECUTOR_THINKING]
+- @$1-validator: Quality assurance [thinking: $VALIDATOR_THINKING]
+- @$1-coordinator: Orchestration [thinking: $COORDINATOR_THINKING]
 
-#### Commands (3)
-- /$1: Main workflow entry
-- /$1-status: Check progress
-- /$1-rollback: Undo changes
+#### Commands (5) with Thinking Levels
+- /$1: Main workflow entry [thinking: $COMMAND_THINKING]
+- /$1-analyze: Deep analysis [thinking: $ANALYZE_THINKING]
+- /$1-validate: Result validation [thinking: $VALIDATE_THINKING]
+- /$1-status: Check progress [thinking: none]
+- /$1-rollback: Undo changes [thinking: $ROLLBACK_THINKING]
+
+### Thinking Level Assignment Rationale
+Based on complexity score of $COMPLEXITY_SCORE:
+- Detected keywords: [$DETECTED_KEYWORDS]
+- Workflow pattern: [$PATTERN_TYPE]
+- Agents assigned thinking levels based on their roles
+- Commands assigned thinking based on operation complexity
 
 ### Usage Examples
 
 \`\`\`bash
-# Execute workflow
+# Execute workflow (will $THINKING_DIRECTIVE the task)
 /$1 "parameter"
 
-# Check status
+# Deep analysis (will $ANALYZE_DIRECTIVE requirements)
+/$1-analyze
+
+# Check status (simple operation, no deep thinking)
 /$1-status
 
-# Rollback if needed
+# Rollback if needed (will $ROLLBACK_DIRECTIVE the rollback)
 /$1-rollback
 \`\`\`
 
@@ -595,6 +896,7 @@ After creating a workflow:
 - Setup Time: $time
 - Token Optimization: $before → $after tokens
 - Workflow Complexity: $complexity-score
+- Thinking Budget: [$TOTAL_THINKING_OPERATIONS operations with extended thinking]
 
 ### Next Steps
 1. Test the workflow with: /$1 test
