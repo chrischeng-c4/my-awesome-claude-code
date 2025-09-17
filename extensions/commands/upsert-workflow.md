@@ -1,12 +1,12 @@
 ---
 allowed-tools: ["Read", "Write", "Edit", "MultiEdit", "Grep", "Glob", "Bash", "WebFetch", "Task", "TodoWrite"]
 model: "claude-opus-4-1-20250805"
-description: "Orchestrate complete development workflows with intelligent documentation, command generation, and agent creation"
+description: "Create or update complete development workflows with intelligent documentation, command generation, and agent creation"
 argument-hint: "<workflow-name> <description> [--user|--project] [--docs-first] [--token-optimize]"
 thinking-level: "ultrathink"
 ---
 
-# /workflow
+# /upsert-workflow
 
 ultrathink about creating comprehensive development workflows that combine documentation intelligence, command orchestration, and agent specialization into a unified system.
 
@@ -343,7 +343,7 @@ For workflow "$1", generate agents with intelligent thinking assignment:
 # Calculate workflow complexity
 COMPLEXITY_SCORE=$(calculate_complexity "$1" "$description")
 
-# Determine agent location based on workflow level
+# Determine agent location based on workflow level (agents are reusable, no namespace needed)
 AGENT_DIR = (workflow_level == "user") ? "~/.claude/agents/" : ".claude/agents/"
 
 1. **Analyzer Agent**
@@ -380,6 +380,9 @@ AGENT_DIR = (workflow_level == "user") ? "~/.claude/agents/" : ".claude/agents/"
 AGENT_THINKING=$(get_agent_thinking_level "$AGENT_TYPE" $COMPLEXITY_SCORE)
 THINKING_DIRECTIVE=$(get_thinking_directive "$AGENT_THINKING")
 
+# Create agents directory if it doesn't exist (no namespace for agents - they're reusable)
+mkdir -p $AGENT_DIR
+
 cat > $AGENT_DIR/$1-$AGENT_TYPE.md << 'EOF'
 ---
 allowed-tools: [...]
@@ -407,14 +410,17 @@ COMPLEXITY_SCORE=$(calculate_complexity "$1" "$description")
 COMMAND_THINKING=$(map_score_to_thinking_level $COMPLEXITY_SCORE)
 THINKING_DIRECTIVE=$(get_thinking_directive "$COMMAND_THINKING")
 
-# Determine command location based on workflow level
-CMD_DIR = (workflow_level == "user") ? "~/.claude/commands/" : ".claude/commands/"
+# Determine command location based on workflow level (using workflow namespace)
+CMD_DIR = (workflow_level == "user") ? "~/.claude/commands/workflow/" : ".claude/commands/workflow/"
 
 1. **Main Entry Command**
    Location: $CMD_DIR/$1.md
    Thinking: $COMMAND_THINKING
 
    @Task: Generate main command with thinking directive:
+
+   # Create workflow namespace directory if it doesn't exist
+   mkdir -p $CMD_DIR
 
    cat > $CMD_DIR/$1.md << 'EOF'
    ---
@@ -574,13 +580,18 @@ User → /$1 → Coordinator
 
 2. **Infrastructure Creation**:
    ```bash
+   # Create workflow namespace directory for commands
+   mkdir -p $CMD_DIR
+   # Create agents directory (no namespace - agents are reusable)
+   mkdir -p $AGENT_DIR
+
    # Create agents in parallel
    @Task: Create $1-analyzer agent
    @Task: Create $1-executor agent
    @Task: Create $1-validator agent
    @Task: Create $1-coordinator agent
 
-   # Create commands
+   # Create commands in workflow namespace
    @Task: Create /$1 main command
    @Task: Create helper commands
    ```
@@ -856,18 +867,18 @@ After creating a workflow:
 
 ### Infrastructure Created
 
-#### Agents (4) with Thinking Levels
-- @$1-analyzer: Requirements analysis [thinking: $ANALYZER_THINKING]
-- @$1-executor: Core execution [thinking: $EXECUTOR_THINKING]
-- @$1-validator: Quality assurance [thinking: $VALIDATOR_THINKING]
-- @$1-coordinator: Orchestration [thinking: $COORDINATOR_THINKING]
+#### Agents (4) with Thinking Levels - Reusable Work Logic
+- @$1-analyzer: Requirements analysis [thinking: $ANALYZER_THINKING] → ~/.claude/agents/
+- @$1-executor: Core execution [thinking: $EXECUTOR_THINKING] → ~/.claude/agents/
+- @$1-validator: Quality assurance [thinking: $VALIDATOR_THINKING] → ~/.claude/agents/
+- @$1-coordinator: Orchestration [thinking: $COORDINATOR_THINKING] → ~/.claude/agents/
 
-#### Commands (5) with Thinking Levels
-- /$1: Main workflow entry [thinking: $COMMAND_THINKING]
-- /$1-analyze: Deep analysis [thinking: $ANALYZE_THINKING]
-- /$1-validate: Result validation [thinking: $VALIDATE_THINKING]
-- /$1-status: Check progress [thinking: none]
-- /$1-rollback: Undo changes [thinking: $ROLLBACK_THINKING]
+#### Commands (5) with Thinking Levels - Workflow-Specific Entry Points
+- /$1: Main workflow entry [thinking: $COMMAND_THINKING] → ~/.claude/commands/workflow/
+- /$1-analyze: Deep analysis [thinking: $ANALYZE_THINKING] → ~/.claude/commands/workflow/
+- /$1-validate: Result validation [thinking: $VALIDATE_THINKING] → ~/.claude/commands/workflow/
+- /$1-status: Check progress [thinking: none] → ~/.claude/commands/workflow/
+- /$1-rollback: Undo changes [thinking: $ROLLBACK_THINKING] → ~/.claude/commands/workflow/
 
 ### Thinking Level Assignment Rationale
 Based on complexity score of $COMPLEXITY_SCORE:
