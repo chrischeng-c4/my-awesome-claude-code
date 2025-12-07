@@ -63,18 +63,12 @@ docs/.doctrees/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Claude-specific (old structure - to be removed)
-/install_extensions.py
-/cli.py
-/INSTALL.md
-/commands/
-/agents/
-/claude-code-extensions/
-
-# Keep the new structure
-!extensions/
-!extensions/commands/
-!extensions/agents/
-!src/
-!tests/
+# Claude Code Plugin Structure (DO NOT IGNORE)
+# The plugin system requires these directories
+!.claude-plugin/
+!.claude-plugin/plugin.json
+!.claude-plugin/marketplace.json
+!commands/
+!agents/
 !docs/
+!archive/
