@@ -1,0 +1,91 @@
+{
+  "name": "cc-awesome-cc",
+  "displayName": "Chris Cheng's Awesome Claude Code Extensions",
+  "description": "A comprehensive collection of 20 powerful extensions (7 commands + 13 agents) for Claude Code that supercharge your development workflow with intelligent automation, security scanning, project scaffolding, and expert-level code analysis.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Chris Cheng",
+    "url": "https://github.com/chrischeng"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chrischeng/my-awesome-claude-code"
+  },
+  "homepage": "https://github.com/chrischeng/my-awesome-claude-code#readme",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "automation",
+    "git-workflow",
+    "security-scanning",
+    "project-scaffolding",
+    "code-analysis",
+    "development-tools",
+    "smart-commit",
+    "workflow-orchestration"
+  ],
+  "categories": [
+    "Development Tools",
+    "Productivity",
+    "Git & Version Control",
+    "Code Quality",
+    "Security"
+  ],
+  "icon": "🚀",
+  "preview": [
+    "Smart commit workflow with security scanning",
+    "Complete project initialization and scaffolding",
+    "Intelligent workflow orchestration",
+    "13 specialized analysis and automation agents",
+    "Automated .gitignore management",
+    "Code review and improvement tools"
+  ],
+  "features": [
+    {
+      "title": "Smart Git Workflows",
+      "description": "Intelligent commit generation with security scanning, change analysis, and automated .gitignore management"
+    },
+    {
+      "title": "Project Scaffolding",
+      "description": "Complete project initialization with templates, configurations, and best practices"
+    },
+    {
+      "title": "Workflow Orchestration",
+      "description": "Create and manage complex development workflows with documentation-first approach"
+    },
+    {
+      "title": "Security First",
+      "description": "Built-in security scanning for secrets, credentials, and vulnerabilities in your commits"
+    },
+    {
+      "title": "Code Intelligence",
+      "description": "Deep code analysis, review, and improvement with specialized agents"
+    },
+    {
+      "title": "Extensible Architecture",
+      "description": "Commands and agents work together through subagent orchestration"
+    }
+  ],
+  "requirements": {
+    "minClaudeVersion": "1.0.0",
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ]
+  },
+  "changelog": {
+    "1.0.0": {
+      "date": "2025-12-07",
+      "changes": [
+        "Initial plugin release",
+        "7 powerful commands for workflow automation",
+        "13 specialized agents for analysis and automation",
+        "Smart commit with security scanning",
+        "Complete project initialization system",
+        "Workflow orchestration framework"
+      ]
+    }
+  }
+}

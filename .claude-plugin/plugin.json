@@ -1,0 +1,128 @@
+{
+  "name": "cc-awesome-cc",
+  "version": "1.0.0",
+  "description": "Comprehensive collection of 20 powerful extensions (7 commands + 13 agents) for Claude Code - workflow automation, security scanning, project initialization, and intelligent code analysis",
+  "author": {
+    "name": "Chris Cheng",
+    "url": "https://github.com/chrischeng"
+  },
+  "homepage": "https://github.com/chrischeng/my-awesome-claude-code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chrischeng/my-awesome-claude-code"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "automation",
+    "git-workflow",
+    "security",
+    "project-scaffolding",
+    "code-analysis"
+  ],
+  "commands": [
+    {
+      "name": "smart-commit",
+      "path": "./commands/smart-commit.md",
+      "description": "Intelligent git commit workflow with security scanning, change grouping, and automated commit messages"
+    },
+    {
+      "name": "workflow",
+      "path": "./commands/workflow.md",
+      "description": "Orchestrate complete development workflows with intelligent documentation and agent creation"
+    },
+    {
+      "name": "project-init",
+      "path": "./commands/project-init.md",
+      "description": "Comprehensive project scaffolding service with complete development environment setup"
+    },
+    {
+      "name": "update-agent",
+      "path": "./commands/update-agent.md",
+      "description": "Intelligently create or update subagents with deep analysis and optimization"
+    },
+    {
+      "name": "update-command",
+      "path": "./commands/update-command.md",
+      "description": "Intelligently generate or improve commands with deep project context awareness"
+    },
+    {
+      "name": "improve",
+      "path": "./commands/improve.md",
+      "description": "Multi-dimensional code improvement and optimization across your project"
+    },
+    {
+      "name": "review",
+      "path": "./commands/review.md",
+      "description": "Intelligent code review with multi-dimensional analysis and actionable feedback"
+    }
+  ],
+  "agents": [
+    {
+      "name": "security-scanner",
+      "path": "./agents/security-scanner.md",
+      "description": "Scan git changes for security vulnerabilities, secrets, and sensitive data"
+    },
+    {
+      "name": "change-analyzer",
+      "path": "./agents/change-analyzer.md",
+      "description": "Analyze git changes for logical grouping and categorization"
+    },
+    {
+      "name": "commit-generator",
+      "path": "./agents/commit-generator.md",
+      "description": "Generate meaningful conventional commit messages"
+    },
+    {
+      "name": "gitignore-manager",
+      "path": "./agents/gitignore-manager.md",
+      "description": "Intelligently manage .gitignore patterns"
+    },
+    {
+      "name": "project-builder",
+      "path": "./agents/project-builder.md",
+      "description": "Build complete project structures with all files and configurations"
+    },
+    {
+      "name": "project-init-validator",
+      "path": "./agents/project-init-validator.md",
+      "description": "Validate project initialization requirements and configurations"
+    },
+    {
+      "name": "scaffold-analyzer",
+      "path": "./agents/scaffold-analyzer.md",
+      "description": "Analyze and recommend project scaffolding patterns"
+    },
+    {
+      "name": "environment-setup",
+      "path": "./agents/environment-setup.md",
+      "description": "Configure complete development environment with tools and dependencies"
+    },
+    {
+      "name": "alignment-checker",
+      "path": "./agents/alignment-checker.md",
+      "description": "Verify alignment between requirements and implementation"
+    },
+    {
+      "name": "code-analyzer",
+      "path": "./agents/code-analyzer.md",
+      "description": "Deep code analysis for patterns, quality, and improvements"
+    },
+    {
+      "name": "docs-analyzer",
+      "path": "./agents/docs-analyzer.md",
+      "description": "Analyze documentation for completeness and clarity"
+    },
+    {
+      "name": "refactoring-specialist",
+      "path": "./agents/refactoring-specialist.md",
+      "description": "Specialized refactoring strategies and implementation"
+    },
+    {
+      "name": "tech-lead-pe",
+      "path": "./agents/tech-lead-pe.md",
+      "description": "Technical leadership and architecture guidance with prompt engineering expertise"
+    }
+  ]
+}
